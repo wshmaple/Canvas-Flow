@@ -1,0 +1,7 @@
+{
+  "name": "Multi-Agent Diagram Architect",
+  "description": "An AI-powered infinite canvas system where multiple agents collaborate to deconstruct complex content into structured diagrams (Flowcharts, Sequence Diagrams, Gantts) with real-time layout management.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
