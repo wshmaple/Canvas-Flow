@@ -15,6 +15,23 @@ export enum DiagramType {
   MINDMAP = 'mindmap'
 }
 
+export interface ColorInfo {
+  hex: string;
+  rgb: string;
+  role: string; // e.g., "背景", "主色", "强调色"
+}
+
+export interface PaletteScheme {
+  type: '单色' | '互补色' | '邻近色' | '三分色' | '四分色' | '中性色';
+  name: string;
+  principle: string;
+  colors: ColorInfo[];
+  contrastRatio: string; // e.g., "7.2:1"
+  isWcagPassed: boolean;
+  sceneSuggestions: string;
+  usageNotes: string;
+}
+
 export interface ElementTheme {
   id: string;
   name: string;
@@ -24,6 +41,7 @@ export interface ElementTheme {
   border: string;
   text: string;
   mermaidVars: any;
+  metadata?: Partial<PaletteScheme>;
 }
 
 export const THEMES: ElementTheme[] = [
@@ -60,57 +78,6 @@ export const THEMES: ElementTheme[] = [
       secondaryColor: '#022c22',
       tertiaryColor: '#064e3b'
     }
-  },
-  {
-    id: 'crimson-fury',
-    name: '赤红风暴',
-    primary: '#ef4444',
-    secondary: '#f87171',
-    bg: 'bg-stone-950',
-    border: 'border-red-500/40',
-    text: 'text-red-400',
-    mermaidVars: {
-      primaryColor: '#450a0a',
-      primaryTextColor: '#f87171',
-      primaryBorderColor: '#ef4444',
-      lineColor: '#ef4444',
-      secondaryColor: '#2d0606',
-      tertiaryColor: '#450a0a'
-    }
-  },
-  {
-    id: 'amber-luxury',
-    name: '琥珀流金',
-    primary: '#f59e0b',
-    secondary: '#fbbf24',
-    bg: 'bg-neutral-950',
-    border: 'border-amber-500/40',
-    text: 'text-amber-400',
-    mermaidVars: {
-      primaryColor: '#451a03',
-      primaryTextColor: '#fbbf24',
-      primaryBorderColor: '#f59e0b',
-      lineColor: '#f59e0b',
-      secondaryColor: '#2d0f02',
-      tertiaryColor: '#451a03'
-    }
-  },
-  {
-    id: 'pastel-dream',
-    name: '粉甜梦境',
-    primary: '#f472b6',
-    secondary: '#fb923c',
-    bg: 'bg-gray-900',
-    border: 'border-pink-500/40',
-    text: 'text-pink-400',
-    mermaidVars: {
-      primaryColor: '#500724',
-      primaryTextColor: '#fbcfe8',
-      primaryBorderColor: '#f472b6',
-      lineColor: '#f472b6',
-      secondaryColor: '#4c0519',
-      tertiaryColor: '#500724'
-    }
   }
 ];
 
@@ -134,7 +101,8 @@ export interface CanvasElement {
   themeId: string;
 }
 
-export interface CollaborativeResponse {
+export interface DiagramData {
+  title: string;
   parsing: {
     entities: string[];
     relations: string[];
@@ -146,7 +114,13 @@ export interface CollaborativeResponse {
   generation: {
     mermaidCode: string;
   };
-  layout: {
-    suggestedPosition: { x: number; y: number };
+  layoutRelativePosition: {
+    x: number;
+    y: number;
   };
+}
+
+export interface CollaborativeResponse {
+  summary: string;
+  diagrams: DiagramData[];
 }
