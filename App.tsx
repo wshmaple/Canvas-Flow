@@ -4,8 +4,9 @@ import {
   Send, Undo2, Redo2, Terminal, Zap, Trash2, RefreshCw, Square,
   Wand2, Link as LinkIcon, StickyNote, ImageIcon, ShieldCheck, 
   Save, FolderOpen, Eraser, Command, MousePointer2, Hand, Focus, Home,
-  Loader2
+  Loader2, Download, Code2, Eye
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
 import { 
   AgentRole, CanvasElement, DiagramType, THEMES, Connection, ChatMessage, ThinkingStep 
 } from './types';
@@ -57,6 +58,9 @@ const App: React.FC = () => {
   const [mode, setMode] = useState<InteractionMode>('select');
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [isSpaceDown, setIsSpaceDown] = useState(false);
+  
+  // Local state for toggling code view on cards
+  const [showSourceMap, setShowSourceMap] = useState<Record<string, boolean>>({});
 
   // Abort Controllers
   const globalAbortControllerRef = useRef<AbortController | null>(null);
@@ -156,6 +160,27 @@ const App: React.FC = () => {
       cardAbortControllersRef.current[id].abort();
       delete cardAbortControllersRef.current[id];
       setElements(prev => prev.map(i => i.id === id ? { ...i, isLocalUpdating: false } : i));
+    }
+  };
+
+  const exportCardAsImage = async (id: string, title: string) => {
+    const cardElement = document.getElementById(`card-${id}`);
+    if (!cardElement) return;
+
+    try {
+      // Fix: Removing 'borderRadius' from html2canvas options as it is not a valid property
+      const canvas = await html2canvas(cardElement, {
+        backgroundColor: '#0f172a',
+        scale: 2,
+        useCORS: true,
+        logging: false
+      });
+      const link = document.createElement('a');
+      link.download = `${title.replace(/\s+/g, '-')}-arch.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (err) {
+      console.error('Failed to export card image:', err);
     }
   };
 
@@ -382,7 +407,6 @@ const App: React.FC = () => {
             ))}
             {isProcessing && (
               <div className="flex items-center gap-2 px-4 py-2 text-indigo-400 animate-pulse">
-                {/* Loader2 added to lucide-react import */}
                 <Loader2 className="w-3 h-3 animate-spin" />
                 <span className="text-[10px] font-bold tracking-widest uppercase">AI 正在输入...</span>
               </div>
@@ -442,13 +466,47 @@ const App: React.FC = () => {
       >
         <div className="absolute inset-0 origin-top-left" style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}>
           {elements.map(el => (
-            <div key={el.id} className={`absolute bg-slate-900 border-2 border-slate-800 rounded-[40px] w-[550px] shadow-2xl transition-all ${draggingId === el.id ? 'z-50 border-indigo-500 scale-[1.02]' : 'z-10'}`} style={{ left: el.x, top: el.y }}>
-              <div className="px-8 py-6 border-b border-slate-800 flex items-center justify-between cursor-grab active:cursor-grabbing" onMouseDown={(e) => { e.stopPropagation(); setDraggingId(el.id); }}>
+            <div 
+              key={el.id} 
+              id={`card-${el.id}`}
+              className={`absolute bg-slate-900 border-2 border-slate-800 rounded-[40px] w-[550px] shadow-2xl transition-all ${draggingId === el.id ? 'z-50 border-indigo-500 scale-[1.02]' : 'z-10'}`} 
+              style={{ left: el.x, top: el.y }}
+            >
+              <div 
+                className="px-8 py-6 border-b border-slate-800 flex items-center justify-between cursor-grab active:cursor-grabbing" 
+                onMouseDown={(e) => { e.stopPropagation(); setDraggingId(el.id); }}
+              >
                 <div className="flex items-center gap-3">
                   <div className={`w-8 h-8 rounded-lg ${el.type === DiagramType.NOTE ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'} flex items-center justify-center font-black text-[10px] border`}>{el.level || 'N'}</div>
                   <span className="text-[11px] font-black uppercase tracking-widest text-slate-100">{el.title}</span>
                 </div>
-                <button onClick={() => { pushToHistory(); setElements(prev => prev.filter(i => i.id !== el.id)); }} className="text-slate-600 hover:text-rose-400 p-2 transition-colors"><Trash2 className="w-5 h-5" /></button>
+                <div className="flex items-center gap-1">
+                  {el.type !== DiagramType.NOTE && (
+                    <>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); exportCardAsImage(el.id, el.title); }} 
+                        className="text-slate-500 hover:text-emerald-400 p-2 transition-colors rounded-lg hover:bg-white/5"
+                        title="导出为此卡片图片"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setShowSourceMap(prev => ({ ...prev, [el.id]: !prev[el.id] })); }} 
+                        className={`p-2 transition-colors rounded-lg hover:bg-white/5 ${showSourceMap[el.id] ? 'text-indigo-400' : 'text-slate-500 hover:text-indigo-400'}`}
+                        title={showSourceMap[el.id] ? "查看图表" : "查看源码"}
+                      >
+                        {showSourceMap[el.id] ? <Eye className="w-4 h-4" /> : <Code2 className="w-4 h-4" />}
+                      </button>
+                    </>
+                  )}
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); pushToHistory(); setElements(prev => prev.filter(i => i.id !== el.id)); }} 
+                    className="text-slate-600 hover:text-rose-400 p-2 transition-colors rounded-lg hover:bg-white/5"
+                    title="删除模块"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               <div className="p-9">
                 {el.type === DiagramType.NOTE ? (
@@ -459,7 +517,15 @@ const App: React.FC = () => {
                   />
                 ) : (
                   <>
-                    <SmartDiagram id={el.id} code={el.mermaidCode} isVisible={true} themeVars={THEMES[0].mermaidVars} />
+                    <div className="relative overflow-hidden rounded-2xl">
+                      {showSourceMap[el.id] ? (
+                        <div className="bg-black/50 p-6 rounded-2xl font-mono text-[10px] text-indigo-200 border border-white/5 min-h-[150px] overflow-auto whitespace-pre animate-in fade-in duration-300">
+                          {el.mermaidCode}
+                        </div>
+                      ) : (
+                        <SmartDiagram id={el.id} code={el.mermaidCode} isVisible={true} themeVars={THEMES[0].mermaidVars} />
+                      )}
+                    </div>
                     <div className="mt-8 flex gap-3">
                       <input 
                         value={el.localChatInput || ''} 

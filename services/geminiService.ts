@@ -69,8 +69,9 @@ export const generateDiagramAgent = async (node: CategoryNode, context: string):
  * 视觉解构智能体
  */
 export const visionToDiagram = async (base64Image: string): Promise<any> => {
+  // Fix: Using gemini-3-pro-preview for complex architectural reasoning from images.
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image', 
+    model: 'gemini-3-pro-preview', 
     contents: {
       parts: [
         { inlineData: { data: base64Image, mimeType: 'image/png' } },
