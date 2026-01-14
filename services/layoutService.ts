@@ -27,8 +27,9 @@ export const calculateHierarchicalLayout = (
     }
   });
 
-  // 2. Identify root nodes (those with no parentId and lowest in-degree)
-  const roots = elements.filter(el => !el.parentId && inDegree[el.id] === 0);
+  // 2. Identify root nodes (those with lowest in-degree)
+  // Fix: Removed !el.parentId as it does not exist on type CanvasElement; inDegree check is sufficient for graph roots.
+  const roots = elements.filter(el => inDegree[el.id] === 0);
   
   // If no pure roots, just pick the first element as a fallback
   if (roots.length === 0 && elements.length > 0) {
