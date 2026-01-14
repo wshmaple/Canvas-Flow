@@ -1,30 +1,28 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
-  Plus, Minus, Maximize2, Trash2, X, Target, ListTree, Activity, Palette, Sparkles,
-  Download, Wand2, Search, Zap, MessageSquare, Bot, RefreshCw, Paintbrush, 
-  CornerDownRight, Focus, Undo2, Clock, Network, Map as MapIcon, ChevronUp, ChevronDown,
-  Send
+  Plus, Minus, Trash2, Activity, Palette, Sparkles, Wand2, MessageSquare, Zap, RefreshCw, Send, Map as MapIcon, Target
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
-import { AgentRole, AgentStatus, CanvasElement, CollaborativeResponse, DiagramType, THEMES, ElementTheme, PaletteScheme, Connection, CanvasSnapshot, ThinkingStep } from './types';
-import { processCollaborativeContent, modifyDiagramContent, generateProfessionalPalette, handleGlobalAction, drillDownElement } from './services/geminiService';
+import { 
+  AgentRole, AgentStatus, CanvasElement, CollaborativeResponse, 
+  DiagramType, THEMES, ElementTheme, Connection, ThinkingStep, CanvasProjectState 
+} from './types';
+import { processCollaborativeContent, modifyDiagramContent, drillDownElement } from './services/geminiService';
 import { calculateHierarchicalLayout } from './services/layoutService';
 import AgentPanel from './components/AgentPanel';
-import MermaidChart from './components/MermaidChart';
+import SmartDiagram from './components/SmartDiagram';
+import CanvasControlHub, { InteractionMode } from './components/CanvasControlHub';
 
 /**
- * Smart Manhattan ConnectionLines
+ * 连线渲染层
  */
 const ConnectionLines: React.FC<{ elements: CanvasElement[], connections: Connection[], scale: number }> = ({ elements, connections, scale }) => {
   return (
     <svg className="absolute inset-0 pointer-events-none overflow-visible" style={{ zIndex: 5 }}>
       <defs>
         <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orientation="auto">
-          <polygon points="0 0, 10 3.5, 0 7" fill="#6366f1" opacity="0.6" />
-        </marker>
-        <marker id="drillhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orientation="auto">
-          <polygon points="0 0, 10 3.5, 0 7" fill="#f43f5e" opacity="0.8" />
+          <polygon points="0 0, 10 3.5, 0 7" fill="#6366f1" opacity="0.4" />
         </marker>
       </defs>
       {connections.map(conn => {
@@ -32,95 +30,47 @@ const ConnectionLines: React.FC<{ elements: CanvasElement[], connections: Connec
         const to = elements.find(e => e.id === conn.toId);
         if (!from || !to) return null;
 
-        const isDrillDown = to.parentId === from.id;
-        const color = isDrillDown ? "#f43f5e" : "#6366f1";
-        
-        // Smarter Routing Logic (Manhattan style)
         const fx = from.x + 550;
-        const fy = from.y + 250;
+        const fy = from.y + 200;
         const tx = to.x;
-        const ty = to.y + 250;
-
+        const ty = to.y + 200;
         const midX = fx + (tx - fx) / 2;
-        
-        // Path construction
-        const path = `M ${fx} ${fy} L ${midX} ${fy} L ${midX} ${ty} L ${tx} ${ty}`;
 
         return (
-          <g key={conn.id} className="transition-opacity duration-300">
-            <path 
-              d={path} 
-              fill="none" 
-              stroke={color}
-              strokeWidth={isDrillDown ? "2" : "1.5"} 
-              strokeDasharray={isDrillDown ? "4 4" : "none"} 
-              opacity={isDrillDown ? "0.5" : "0.2"} 
-              markerEnd={isDrillDown ? "url(#drillhead)" : "url(#arrowhead)"} 
-            />
-            {conn.label && (
-              <foreignObject x={midX - 60} y={(fy + ty) / 2 - 12} width="120" height="24">
-                <div className="flex items-center justify-center h-full">
-                  <span className={`bg-slate-900/90 border ${isDrillDown ? 'border-rose-500/40 text-rose-300' : 'border-indigo-500/40 text-indigo-300'} rounded-full px-2 py-0.5 text-[7px] font-black uppercase tracking-tighter shadow-lg backdrop-blur-md truncate`}>
-                    {conn.label}
-                  </span>
-                </div>
-              </foreignObject>
-            )}
-          </g>
+          <path 
+            key={conn.id}
+            d={`M ${fx} ${fy} L ${midX} ${fy} L ${midX} ${ty} L ${tx} ${ty}`} 
+            fill="none" 
+            stroke="#6366f1" 
+            strokeWidth="1.5" 
+            opacity="0.15" 
+            markerEnd="url(#arrowhead)" 
+          />
         );
       })}
     </svg>
   );
 };
 
-/**
- * Minimap Component
- */
-const Minimap: React.FC<{ elements: CanvasElement[], offset: {x:number, y:number}, scale: number, onNavigate: (x:number, y:number)=>void }> = ({ elements, offset, scale, onNavigate }) => {
+const Minimap: React.FC<{ elements: CanvasElement[], offset: {x:number, y:number}, scale: number }> = ({ elements, offset, scale }) => {
   if (elements.length === 0) return null;
-  
   const minX = Math.min(...elements.map(e => e.x)) - 500;
   const minY = Math.min(...elements.map(e => e.y)) - 500;
   const maxX = Math.max(...elements.map(e => e.x)) + 1500;
   const maxY = Math.max(...elements.map(e => e.y)) + 1500;
-  
   const width = maxX - minX;
   const height = maxY - minY;
   const mapWidth = 200;
-  const mapHeight = (height / width) * mapWidth;
-  
+  const mapHeight = Math.min((height / width) * mapWidth, 150);
   const factor = mapWidth / width;
 
   return (
-    <div className="fixed bottom-32 right-8 bg-slate-900/80 backdrop-blur-xl border border-white/5 rounded-2xl shadow-2xl p-2 z-[60] overflow-hidden group">
-      <div className="text-[8px] font-black uppercase tracking-widest text-slate-500 mb-2 px-1 flex items-center gap-2">
-        <MapIcon className="w-3 h-3" /> Navigator
-      </div>
-      <div className="relative border border-white/5 bg-slate-950 rounded-lg overflow-hidden" style={{ width: mapWidth, height: mapHeight }}>
+    <div className="fixed bottom-32 right-8 bg-slate-900/80 backdrop-blur-xl border border-white/5 rounded-2xl p-2 z-[60] overflow-hidden">
+      <div className="relative bg-slate-950 rounded-lg overflow-hidden" style={{ width: mapWidth, height: mapHeight }}>
         {elements.map(el => (
-          <div 
-            key={el.id} 
-            className="absolute rounded-[1px]" 
-            style={{ 
-              left: (el.x - minX) * factor, 
-              top: (el.y - minY) * factor, 
-              width: 550 * factor, 
-              height: 400 * factor,
-              backgroundColor: THEMES.find(t => t.id === el.themeId)?.primary || '#6366f1',
-              opacity: 0.6
-            }}
-          />
+          <div key={el.id} className="absolute bg-indigo-500 opacity-60 rounded-sm" style={{ left: (el.x - minX) * factor, top: (el.y - minY) * factor, width: 550 * factor, height: 400 * factor }} />
         ))}
-        {/* Viewport Indicator */}
-        <div 
-          className="absolute border border-indigo-500 bg-indigo-500/10 transition-all"
-          style={{
-            left: ((-offset.x/scale) - minX) * factor,
-            top: ((-offset.y/scale) - minY) * factor,
-            width: (window.innerWidth/scale) * factor,
-            height: (window.innerHeight/scale) * factor
-          }}
-        />
+        <div className="absolute border border-indigo-500 bg-indigo-500/10" style={{ left: ((-offset.x/scale) - minX) * factor, top: ((-offset.y/scale) - minY) * factor, width: (window.innerWidth/scale) * factor, height: (window.innerHeight/scale) * factor }} />
       </div>
     </div>
   );
@@ -130,60 +80,63 @@ const App: React.FC = () => {
   const [input, setInput] = useState('');
   const [elements, setElements] = useState<CanvasElement[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [customThemes, setCustomThemes] = useState<ElementTheme[]>(THEMES);
   const [agents, setAgents] = useState<AgentStatus[]>([]);
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'input' | 'list' | 'history'>('input');
   
-  const [history, setHistory] = useState<CanvasSnapshot[]>([]);
-  const [drillingElementId, setDrillingElementId] = useState<string | null>(null);
-  const [isLayouting, setIsLayouting] = useState(false);
-
-  // Theme Workshop
-  const [isThemeWorkshopOpen, setIsThemeWorkshopOpen] = useState(false);
-  const [baseColor, setBaseColor] = useState('#6366f1');
-  const [suggestedPalettes, setSuggestedPalettes] = useState<PaletteScheme[]>([]);
-  const [isGeneratingPalette, setIsGeneratingPalette] = useState(false);
-
-  // Global Chat
-  const [isGlobalChatOpen, setIsGlobalChatOpen] = useState(false);
-  const [globalInput, setGlobalInput] = useState('');
-  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'bot', text: string }[]>([]);
-  const [isGlobalProcessing, setIsGlobalProcessing] = useState(false);
-
-  // Canvas
   const [offset, setOffset] = useState({ x: 100, y: 100 });
   const [scale, setScale] = useState(0.8);
+  const [showGrid, setShowGrid] = useState(true);
+  const [mode, setMode] = useState<InteractionMode>('select');
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
-  const [draggingElementId, setDraggingElementId] = useState<string | null>(null);
-  const [elementDragOffset, setElementDragOffset] = useState({ x: 0, y: 0 });
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   const canvasRef = useRef<HTMLDivElement>(null);
-  const canvasContentRef = useRef<HTMLDivElement>(null);
+  const captureRef = useRef<HTMLDivElement>(null);
+  const animFrame = useRef<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const addThinkingStep = useCallback((agent: AgentRole, content: string) => {
-    setThinkingSteps(prev => [...prev, {
-      id: crypto.randomUUID(),
-      agent,
-      content,
-      timestamp: Date.now()
-    }]);
+  // 快捷键系统
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+      if (e.code === 'Space') { setMode('pan'); }
+      if (e.key.toLowerCase() === 'v') { setMode('select'); }
+      if (e.key.toLowerCase() === 'h') { setMode('pan'); }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') { setMode('select'); }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, []);
 
-  const saveSnapshot = useCallback((label: string) => {
-    setHistory(prev => {
-      const newSnapshot: CanvasSnapshot = {
-        id: crypto.randomUUID(),
-        timestamp: Date.now(),
-        label,
-        elements: JSON.parse(JSON.stringify(elements)),
-        connections: JSON.parse(JSON.stringify(connections))
-      };
-      return [newSnapshot, ...prev].slice(0, 20);
-    });
-  }, [elements, connections]);
+  useEffect(() => {
+    const handleFullscreenChange = () => setIsFullScreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  // 视口裁剪逻辑
+  const visibleIds = useMemo(() => {
+    if (!canvasRef.current) return new Set<string>();
+    const { width, height } = canvasRef.current.getBoundingClientRect();
+    const vL = -offset.x / scale - 600;
+    const vR = (width - offset.x) / scale + 600;
+    const vT = -offset.y / scale - 600;
+    const vB = (height - offset.y) / scale + 600;
+
+    return new Set(elements.filter(el => 
+      el.x + 600 > vL && el.x < vR && el.y + 500 > vT && el.y < vB
+    ).map(el => el.id));
+  }, [elements, offset, scale]);
 
   const updateAgent = useCallback((role: AgentRole, status: AgentStatus['status'], message: string) => {
     setAgents(prev => {
@@ -195,37 +148,25 @@ const App: React.FC = () => {
 
   const handleProcess = async () => {
     if (!input.trim() || isProcessing) return;
-    saveSnapshot('执行全量解构');
     setIsProcessing(true);
     setAgents([]);
     setThinkingSteps([]);
 
     try {
-      updateAgent(AgentRole.SCHEDULER, 'processing', '启动集群解构...');
-      addThinkingStep(AgentRole.SCHEDULER, '任务分配：正在启动语义分析器...');
-      
-      updateAgent(AgentRole.CONTENT_PARSER, 'processing', '解析文档拓扑...');
-      addThinkingStep(AgentRole.CONTENT_PARSER, '识别到文本中的宏观逻辑流，正在提取实体关系...');
-
+      updateAgent(AgentRole.SCHEDULER, 'processing', '协同调度：解析宏观架构文档...');
       const result = await processCollaborativeContent(input);
-      addThinkingStep(AgentRole.DIAGRAM_DECISION, '根据拓扑密度，决定采用混合图表方案。');
       
-      const diagrams = result?.diagrams || [];
-      const relationships = result?.relationships || [];
-
-      const newElements: CanvasElement[] = diagrams.map((diag, index) => ({
+      const newElements: CanvasElement[] = result.diagrams.map((diag, i) => ({
         id: crypto.randomUUID(),
         type: diag.decision.recommendedType as DiagramType,
         mermaidCode: diag.generation.mermaidCode,
-        x: 100 + (index * 800),
-        y: 100 + (index * 120),
-        scale: 1,
-        title: diag.title || `架构单元 ${index + 1}`,
-        deconstructedElements: diag.parsing?.entities || [],
-        themeId: customThemes[index % customThemes.length].id
+        x: 100 + i * 650, y: 100, scale: 1,
+        title: diag.title,
+        deconstructedElements: diag.parsing.entities,
+        themeId: THEMES[i % THEMES.length].id
       }));
 
-      const newConnections: Connection[] = relationships.map(rel => ({
+      const newConns: Connection[] = result.relationships.map(rel => ({
         id: crypto.randomUUID(),
         fromId: newElements[rel.fromIndex]?.id,
         toId: newElements[rel.toIndex]?.id,
@@ -233,36 +174,41 @@ const App: React.FC = () => {
       })).filter(c => c.fromId && c.toId);
 
       setElements(prev => [...prev, ...newElements]);
-      setConnections(prev => [...prev, ...newConnections]);
-      updateAgent(AgentRole.SCHEDULER, 'completed', '系统解构完成');
-      addThinkingStep(AgentRole.SCHEDULER, '渲染管道已就绪，所有模块已加载。');
-      setActiveTab('list');
-      setTimeout(() => handleAutoLayout(), 500);
-    } catch (error) {
-      updateAgent(AgentRole.SCHEDULER, 'error', '执行失败');
+      setConnections(prev => [...prev, ...newConns]);
+      updateAgent(AgentRole.SCHEDULER, 'completed', '解析完成，架构拓扑已就绪');
+      setTimeout(handleFitView, 150);
+    } catch (e) {
+      updateAgent(AgentRole.SCHEDULER, 'error', 'AI 协同失败，请检查输入或网络');
     } finally { setIsProcessing(false); }
   };
 
-  const handleAutoLayout = () => {
-    if (elements.length === 0 || isLayouting) return;
-    setIsLayouting(true);
-    addThinkingStep(AgentRole.CANVAS_LAYOUT, '计算曼哈顿路径最短化，优化节点分布。');
-    const newPositions = calculateHierarchicalLayout(elements, connections);
+  const autoLayout = () => {
+    const positions = calculateHierarchicalLayout(elements, connections);
     setElements(prev => prev.map(el => {
-      const pos = newPositions.find(p => p.id === el.id);
+      const pos = positions.find(p => p.id === el.id);
       return pos ? { ...el, x: pos.x, y: pos.y } : el;
     }));
-    setTimeout(() => {
-      setIsLayouting(false);
-      updateAgent(AgentRole.CANVAS_LAYOUT, 'completed', '布局完成');
-    }, 600);
+  };
+
+  const handleFitView = () => {
+    if (elements.length === 0 || !canvasRef.current) return;
+    const padding = 150;
+    const minX = Math.min(...elements.map(e => e.x));
+    const maxX = Math.max(...elements.map(e => e.x + 550));
+    const minY = Math.min(...elements.map(e => e.y));
+    const maxY = Math.max(...elements.map(e => e.y + 400));
+    const contentWidth = maxX - minX + padding * 2;
+    const contentHeight = maxY - minY + padding * 2;
+    const { width, height } = canvasRef.current.getBoundingClientRect();
+    const newScale = Math.min(width / contentWidth, height / contentHeight, 1);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    setOffset({ x: width / 2 - centerX * newScale, y: height / 2 - centerY * newScale });
+    setScale(newScale);
   };
 
   const handleDrillDown = async (parent: CanvasElement, entity: string) => {
-    saveSnapshot(`下钻分析: ${entity}`);
-    updateAgent(AgentRole.CONTENT_PARSER, 'processing', `正在拆解 ${entity}...`);
-    addThinkingStep(AgentRole.CONTENT_PARSER, `正在对子组件「${entity}」进行深度递归解构...`);
-    
+    updateAgent(AgentRole.CONTENT_PARSER, 'processing', `下钻分析：模块 ${entity}`);
     try {
       const diag = await drillDownElement(parent, entity);
       const newEl: CanvasElement = {
@@ -270,183 +216,263 @@ const App: React.FC = () => {
         parentId: parent.id,
         type: diag.decision.recommendedType as DiagramType,
         mermaidCode: diag.generation.mermaidCode,
-        x: parent.x + 850,
-        y: parent.y + 100,
-        scale: 1,
-        title: diag.title || `下钻详情: ${entity}`,
-        deconstructedElements: diag.parsing?.entities || [],
+        x: parent.x + 750, y: parent.y + 100, scale: 1,
+        title: diag.title,
+        deconstructedElements: diag.parsing.entities,
         themeId: parent.themeId
       };
       setElements(prev => [...prev, newEl]);
-      setConnections(prev => [...prev, { id: crypto.randomUUID(), fromId: parent.id, toId: newEl.id, label: `解构: ${entity}` }]);
-      setTimeout(() => handleAutoLayout(), 100);
+      setConnections(prev => [...prev, { id: crypto.randomUUID(), fromId: parent.id, toId: newEl.id, label: 'Detail' }]);
+      updateAgent(AgentRole.CONTENT_PARSER, 'completed', `子模块解析完成`);
     } catch (e) {
       updateAgent(AgentRole.CONTENT_PARSER, 'error', '下钻失败');
     }
   };
 
-  const handleLocalChatUpdate = async (el: CanvasElement) => {
-    if (!el.localChatInput?.trim() || el.isLocalUpdating) return;
-    setElements(prev => prev.map(item => item.id === el.id ? { ...item, isLocalUpdating: true } : item));
-    addThinkingStep(AgentRole.DIAGRAM_GENERATOR, `正在针对卡片「${el.title}」执行局部微调: ${el.localChatInput}`);
-    
+  const updateCardCode = async (el: CanvasElement) => {
+    if (!el.localChatInput?.trim()) return;
+    setElements(prev => prev.map(i => i.id === el.id ? { ...i, isLocalUpdating: true } : i));
     try {
       const newCode = await modifyDiagramContent(el.mermaidCode, el.localChatInput);
-      setElements(prev => prev.map(item => item.id === el.id ? { ...item, mermaidCode: newCode, localChatInput: '', isLocalUpdating: false } : item));
+      setElements(prev => prev.map(i => i.id === el.id ? { ...i, mermaidCode: newCode, localChatInput: '', isLocalUpdating: false } : i));
     } catch (e) {
-      setElements(prev => prev.map(item => item.id === el.id ? { ...item, isLocalUpdating: false } : item));
+      setElements(prev => prev.map(i => i.id === el.id ? { ...i, isLocalUpdating: false } : i));
     }
   };
 
-  const focusElement = (el: CanvasElement, targetScale?: number) => {
+  const handleExportImage = async () => {
+    if (!captureRef.current) return;
+    updateAgent(AgentRole.INTERACTION_FEEDBACK, 'processing', '渲染导出图像中...');
+    try {
+      const canvas = await html2canvas(captureRef.current, { backgroundColor: '#020617', scale: 2, logging: false, useCORS: true });
+      const link = document.createElement('a');
+      link.download = `blueprint-${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      updateAgent(AgentRole.INTERACTION_FEEDBACK, 'completed', '图像导出成功');
+    } catch (e) {
+      updateAgent(AgentRole.INTERACTION_FEEDBACK, 'error', '导出失败');
+    }
+  };
+
+  const handleSaveProject = () => {
+    const project: CanvasProjectState = {
+      version: "1.0",
+      timestamp: Date.now(),
+      elements,
+      connections,
+      viewConfig: { offset, scale, showGrid }
+    };
+    const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = `architect-project-${new Date().toISOString().slice(0,10)}.json`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
+    updateAgent(AgentRole.INTERACTION_FEEDBACK, 'completed', '工程存档已下载');
+  };
+
+  const handleLoadProject = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const project = JSON.parse(e.target?.result as string) as CanvasProjectState;
+        if (project.elements && project.connections) {
+          setElements(project.elements);
+          setConnections(project.connections);
+          if (project.viewConfig) {
+            setOffset(project.viewConfig.offset);
+            setScale(project.viewConfig.scale);
+            setShowGrid(project.viewConfig.showGrid);
+          }
+          updateAgent(AgentRole.INTERACTION_FEEDBACK, 'completed', '项目已成功加载');
+        }
+      } catch (err) {
+        updateAgent(AgentRole.INTERACTION_FEEDBACK, 'error', '无效的项目存档文件');
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleClearCanvas = () => {
+    if (elements.length === 0) return;
+    if (window.confirm("确定要清空当前画布吗？所有未保存的内容都将丢失。")) {
+      setElements([]);
+      setConnections([]);
+      setOffset({ x: 100, y: 100 });
+      setScale(0.8);
+      updateAgent(AgentRole.INTERACTION_FEEDBACK, 'completed', '画布已清空');
+    }
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
     if (!canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    const s = targetScale || scale;
-    setOffset({ x: rect.width / 2 - (el.x * s + 275 * s), y: rect.height / 2 - (el.y * s + 200 * s) });
-    if (targetScale) setScale(s);
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const factor = Math.pow(1.1, -e.deltaY / 100);
+    const newScale = Math.min(Math.max(scale * factor, 0.05), 5);
+    const newOffsetX = mouseX - (mouseX - offset.x) * (newScale / scale);
+    const newOffsetY = mouseY - (mouseY - offset.y) * (newScale / scale);
+    setScale(newScale);
+    setOffset({ x: newOffsetX, y: newOffsetY });
+  };
+
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (animFrame.current) cancelAnimationFrame(animFrame.current);
+    animFrame.current = requestAnimationFrame(() => {
+      if (draggingId) {
+        setElements(prev => prev.map(el => el.id === draggingId ? { ...el, x: (e.clientX - offset.x) / scale - dragOffset.x, y: (e.clientY - offset.y) / scale - dragOffset.y } : el));
+      } else if (isPanning) {
+        setOffset({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+      }
+    });
+  };
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (mode === 'pan' || e.shiftKey) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+    }
+  };
+
+  const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else if (document.exitFullscreen) {
+      document.exitFullscreen();
+    }
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#020617] text-slate-200 font-sans selection:bg-indigo-500/30">
-      <aside className="w-80 h-full border-r border-slate-800 bg-slate-900/60 backdrop-blur-3xl flex flex-col z-20 shadow-2xl">
-        <div className="p-6 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <Sparkles className="w-5 h-5 text-indigo-400" />
-              <h1 className="text-lg font-black tracking-tight">架构中心 PRO</h1>
-            </div>
+    <div className="flex h-screen w-screen bg-[#020617] text-slate-200 overflow-hidden font-sans select-none">
+      <aside className="w-80 h-full border-r border-slate-800 bg-slate-900/40 backdrop-blur-3xl z-20 flex flex-col shadow-2xl">
+        <div className="p-6 border-b border-slate-800 flex items-center gap-3">
+          <Sparkles className="w-6 h-6 text-indigo-400" />
+          <h1 className="font-black tracking-tighter uppercase text-base">Diagram Architect</h1>
+        </div>
+        <div className="p-6 space-y-6 flex-1 overflow-y-auto no-scrollbar">
+          <div className="space-y-3">
+             <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest px-1">Content Input</label>
+             <textarea 
+               value={input} 
+               onChange={(e) => setInput(e.target.value)} 
+               placeholder="粘贴需求文档，Agent 将为你建立逻辑图谱..." 
+               className="w-full h-52 bg-slate-950/80 border border-slate-800 rounded-2xl p-4 text-xs focus:ring-1 focus:ring-indigo-500 outline-none resize-none transition-all placeholder:text-slate-800 font-mono leading-relaxed" 
+             />
           </div>
-          <button onClick={() => setIsGlobalChatOpen(!isGlobalChatOpen)} className={`p-2 rounded-xl ${isGlobalChatOpen ? 'bg-indigo-600' : 'hover:bg-slate-800'}`}>
-            <MessageSquare className="w-5 h-5" />
+          <button onClick={handleProcess} disabled={isProcessing} className="group w-full py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-3 shadow-[0_15px_30px_-5px_rgba(79,70,229,0.3)] transition-all active:scale-[0.98]">
+            {isProcessing ? <Activity className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4 fill-white" />} 
+            {isProcessing ? 'Agents Thinking...' : 'Build Architecture'}
           </button>
-        </div>
-
-        <div className="flex border-b border-slate-800">
-          {['input', 'list', 'history'].map((tab: any) => (
-            <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-4 text-[9px] font-black uppercase tracking-widest ${activeTab === tab ? 'border-b-2 border-indigo-500 text-indigo-400' : 'text-slate-500'}`}>{tab === 'input' ? '解构' : tab === 'list' ? '大纲' : '历史'}</button>
-          ))}
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar">
-          {activeTab === 'input' && (
-            <div className="space-y-4">
-              <textarea 
-                value={input} 
-                onChange={(e) => setInput(e.target.value)} 
-                placeholder="粘贴需求文档..." 
-                className="w-full h-48 bg-slate-950 border border-slate-800 rounded-2xl p-4 text-xs focus:ring-1 focus:ring-indigo-500 outline-none resize-none" 
-              />
-              <button onClick={handleProcess} disabled={isProcessing} className="w-full py-4 bg-indigo-600 hover:bg-indigo-600 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
-                {isProcessing ? <Activity className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />} 执行解构
-              </button>
-              <AgentPanel agents={agents} thinkingSteps={thinkingSteps} />
-            </div>
-          )}
-          {activeTab === 'list' && (
-            <div className="space-y-2">
-              {elements.filter(el => !el.parentId).map(el => (
-                <div key={el.id} className="space-y-1">
-                  <div onClick={() => focusElement(el)} className="p-3 bg-slate-800/20 hover:bg-indigo-500/10 rounded-xl cursor-pointer flex items-center justify-between border border-transparent hover:border-indigo-500/30">
-                    <span className="text-[10px] font-black uppercase tracking-tight truncate">{el.title}</span>
-                    <Target className="w-3 h-3 text-slate-500" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <AgentPanel agents={agents} thinkingSteps={thinkingSteps} />
         </div>
       </aside>
 
       <main 
-        ref={canvasRef} 
-        className="flex-1 relative overflow-hidden bg-[#020617] bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:60px_60px]" 
-        onMouseDown={(e) => {
-          if (e.button === 0 && e.shiftKey) { setIsPanning(true); setPanStart({ x: e.clientX - offset.x, y: e.clientY - offset.y }); }
-        }} 
-        onMouseMove={(e) => {
-          if (draggingElementId) {
-             setElements(prev => prev.map(el => el.id === draggingElementId ? { ...el, x: (e.clientX - offset.x) / scale - elementDragOffset.x, y: (e.clientY - offset.y) / scale - elementDragOffset.y } : el));
-          } else if (isPanning) { setOffset({ x: e.clientX - panStart.x, y: e.clientY - panStart.y }); }
-        }}
-        onMouseUp={() => { setIsPanning(false); setDraggingElementId(null); }}
-        onWheel={(e) => {
-          const delta = e.deltaY > 0 ? 0.9 : 1.1;
-          setScale(s => Math.min(Math.max(s * delta, 0.1), 4));
-        }}
+        ref={canvasRef}
+        className={`flex-1 relative transition-colors duration-500 overflow-hidden ${
+          mode === 'pan' ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'
+        } ${showGrid ? 'bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:50px_50px]' : 'bg-[#020617]'}`}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={() => { setIsPanning(false); setDraggingId(null); }}
+        onWheel={handleWheel}
       >
         <div 
-          ref={canvasContentRef} 
-          className="absolute inset-0 origin-top-left" 
+          ref={captureRef}
+          className="absolute inset-0 origin-top-left will-change-transform" 
           style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
         >
           <ConnectionLines elements={elements} connections={connections} scale={scale} />
-          {elements.map(el => {
-            const theme = customThemes.find(t => t.id === el.themeId) || THEMES[0];
-            return (
+          {elements.map(el => (
+            <div 
+              key={el.id} 
+              className={`absolute bg-slate-900 border-2 border-slate-800 rounded-[32px] w-[550px] shadow-[0_40px_80px_-15px_rgba(0,0,0,0.6)] overflow-hidden transition-all duration-300 hover:border-indigo-500/40 ${
+                draggingId === el.id ? 'z-50 scale-[1.01] ring-2 ring-indigo-500/20' : 'z-10'
+              }`} 
+              style={{ left: el.x, top: el.y }}
+            >
               <div 
-                key={el.id} data-id={el.id}
-                className={`canvas-card absolute ${theme.bg} border-2 ${theme.border} rounded-[1.5rem] shadow-2xl group min-w-[550px] overflow-hidden transition-all duration-300`} 
-                style={{ left: el.x, top: el.y, zIndex: draggingElementId === el.id ? 100 : 10 }}
+                className={`px-6 py-4 border-b border-slate-800 bg-white/[0.03] flex items-center justify-between ${mode === 'select' ? 'cursor-grab active:cursor-grabbing' : 'cursor-inherit'}`}
+                onMouseDown={(e) => { 
+                  if (mode === 'select') {
+                    e.stopPropagation(); 
+                    setDraggingId(el.id); 
+                    setDragOffset({ x: (e.clientX - offset.x) / scale - el.x, y: (e.clientY - offset.y) / scale - el.y }); 
+                  }
+                }}
               >
-                <div 
-                  className="card-header px-6 py-4 border-b border-white/5 flex items-center justify-between bg-white/5 cursor-grab"
-                  onMouseDown={(e) => {
-                    setDraggingElementId(el.id);
-                    setElementDragOffset({ x: (e.clientX - offset.x) / scale - el.x, y: (e.clientY - offset.y) / scale - el.y });
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: theme.primary }} />
-                    <h3 className="text-[10px] font-black text-slate-100 uppercase tracking-widest">{el.title}</h3>
-                  </div>
-                  <div className="flex gap-2">
-                     <button onClick={() => setElements(prev => prev.filter(i => i.id !== el.id))} className="text-rose-500 hover:bg-rose-500/10 p-1 rounded-lg"><Trash2 className="w-3.5 h-3.5"/></button>
-                  </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                  <span className="text-[11px] font-black uppercase tracking-widest text-slate-300">{el.title}</span>
                 </div>
-
-                <div className="p-6 flex flex-col items-center justify-center min-h-[300px] relative">
-                  <MermaidChart 
-                    id={el.id} 
-                    code={el.mermaidCode} 
-                    themeVars={theme.mermaidVars} 
-                    onNodeClick={(label) => handleDrillDown(el, label)}
-                  />
-                  
-                  {/* Local Card Chat Overlay */}
-                  <div className="w-full mt-4 flex gap-2 items-center px-2">
+                <button onClick={() => setElements(prev => prev.filter(i => i.id !== el.id))} className="text-slate-600 hover:text-rose-400 transition-colors p-1.5 hover:bg-white/5 rounded-xl"><Trash2 className="w-4 h-4" /></button>
+              </div>
+              
+              <div className="p-7">
+                <SmartDiagram 
+                  id={el.id} 
+                  code={el.mermaidCode} 
+                  isVisible={visibleIds.has(el.id)} 
+                  onNodeClick={(label) => handleDrillDown(el, label)}
+                />
+                
+                <div className="mt-6 flex gap-3">
+                  <div className="relative flex-1 group">
                     <input 
-                      value={el.localChatInput || ''} 
-                      onChange={(e) => setElements(prev => prev.map(item => item.id === el.id ? { ...item, localChatInput: e.target.value } : item))}
-                      onKeyDown={(e) => e.key === 'Enter' && handleLocalChatUpdate(el)}
-                      placeholder="优化该模块... (如：'改为红色')" 
-                      className="flex-1 bg-slate-950/50 border border-white/5 rounded-xl px-4 py-2 text-[10px] outline-none focus:border-indigo-500/50 transition-all"
+                      value={el.localChatInput || ''}
+                      onChange={(e) => setElements(prev => prev.map(i => i.id === el.id ? { ...i, localChatInput: e.target.value } : i))}
+                      onKeyDown={(e) => e.key === 'Enter' && updateCardCode(el)}
+                      placeholder="微调当前模块逻辑..." 
+                      className="w-full bg-slate-950/80 border border-slate-800 rounded-2xl pl-4 pr-12 py-3 text-xs outline-none focus:border-indigo-500/50 transition-all font-medium"
                     />
-                    <button onClick={() => handleLocalChatUpdate(el)} disabled={el.isLocalUpdating} className="p-2 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white rounded-xl transition-all">
-                      {el.isLocalUpdating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                    </button>
+                    <Sparkles className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 group-focus-within:text-indigo-400 transition-colors" />
                   </div>
+                  <button onClick={() => updateCardCode(el)} disabled={el.isLocalUpdating} className="p-3 bg-indigo-600/10 text-indigo-400 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all disabled:opacity-50 border border-indigo-500/20">
+                    {el.isLocalUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
+        
+        <Minimap elements={elements} offset={offset} scale={scale} />
+        
+        <CanvasControlHub 
+          scale={scale}
+          mode={mode}
+          onSetMode={setMode}
+          onZoomIn={() => { const s = Math.min(scale * 1.2, 5); setScale(s); }}
+          onZoomOut={() => { const s = Math.max(scale * 0.8, 0.05); setScale(s); }}
+          onSetScale={(s) => setScale(s)}
+          onReset={() => { setOffset({x:100, y:100}); setScale(1); }}
+          onFitView={handleFitView}
+          onAutoLayout={autoLayout}
+          onExportImage={handleExportImage}
+          onSaveProject={handleSaveProject}
+          onLoadProject={() => fileInputRef.current?.click()}
+          onClearCanvas={handleClearCanvas}
+          isFullScreen={isFullScreen}
+          onToggleFullScreen={toggleFullScreen}
+          showGrid={showGrid}
+          onToggleGrid={() => setShowGrid(!showGrid)}
+        />
 
-        <Minimap elements={elements} offset={offset} scale={scale} onNavigate={() => {}} />
-
-        <div className="absolute top-8 right-8 flex gap-4 z-40">
-          <button onClick={handleAutoLayout} className="bg-slate-900/90 border border-slate-800 p-3.5 rounded-2xl text-emerald-400 hover:bg-emerald-600 hover:text-white transition-all shadow-2xl backdrop-blur-xl group">
-            <Wand2 className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-          </button>
-          <button onClick={() => setIsThemeWorkshopOpen(true)} className="bg-slate-900/90 border border-slate-800 p-3.5 rounded-2xl text-amber-400 hover:bg-amber-600 hover:text-white transition-all shadow-2xl"><Palette className="w-5 h-5"/></button>
-        </div>
-
-        <div className="absolute bottom-10 right-10 flex flex-col gap-4 z-40">
-          <div className="bg-slate-900/95 border border-slate-800 rounded-3xl p-1.5 flex flex-col shadow-2xl">
-            <button onClick={() => setScale(s => Math.min(s * 1.2, 4))} className="p-4 hover:bg-indigo-600/20 rounded-2xl text-slate-400"><Plus className="w-5 h-5"/></button>
-            <button onClick={() => setScale(s => Math.max(s * 0.8, 0.1))} className="p-4 hover:bg-indigo-600/20 rounded-2xl text-slate-400"><Minus className="w-5 h-5"/></button>
-          </div>
-          <div className="bg-indigo-600 rounded-full px-4 py-1.5 text-white font-black text-[9px] text-center">{Math.round(scale * 100)}%</div>
-        </div>
+        {/* Hidden File Input for Loading */}
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          style={{ display: 'none' }} 
+          accept=".json" 
+          onChange={handleLoadProject} 
+        />
       </main>
     </div>
   );

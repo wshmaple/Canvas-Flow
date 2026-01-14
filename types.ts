@@ -15,23 +15,6 @@ export enum DiagramType {
   MINDMAP = 'mindmap'
 }
 
-export interface ColorInfo {
-  hex: string;
-  rgb: string;
-  role: string;
-}
-
-export interface PaletteScheme {
-  type: '单色' | '互补色' | '邻近色' | '三分色' | '四分色' | '中性色';
-  name: string;
-  principle: string;
-  colors: ColorInfo[];
-  contrastRatio: string;
-  isWcagPassed: boolean;
-  sceneSuggestions: string;
-  usageNotes: string;
-}
-
 export interface ElementTheme {
   id: string;
   name: string;
@@ -41,7 +24,6 @@ export interface ElementTheme {
   border: string;
   text: string;
   mermaidVars: any;
-  metadata?: Partial<PaletteScheme>;
 }
 
 export const THEMES: ElementTheme[] = [
@@ -117,12 +99,19 @@ export interface CanvasElement {
   isLocalUpdating?: boolean;
 }
 
-export interface CanvasSnapshot {
-  id: string;
+/**
+ * 整个画布的完整持久化状态
+ */
+export interface CanvasProjectState {
+  version: string;
   timestamp: number;
-  label: string;
   elements: CanvasElement[];
   connections: Connection[];
+  viewConfig: {
+    offset: { x: number, y: number };
+    scale: number;
+    showGrid: boolean;
+  };
 }
 
 export interface DiagramData {
@@ -152,4 +141,20 @@ export interface CollaborativeResponse {
     toIndex: number;
     label: string;
   }[];
+}
+
+// Define PaletteScheme to match the expected return type in geminiService.ts
+export interface PaletteScheme {
+  type: string;
+  name: string;
+  principle: string;
+  colors: {
+    hex: string;
+    rgb: string;
+    role: string;
+  }[];
+  contrastRatio: string;
+  isWcagPassed: boolean;
+  sceneSuggestions: string;
+  usageNotes: string;
 }
