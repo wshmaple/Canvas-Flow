@@ -86,6 +86,7 @@ const App: React.FC = () => {
 
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
 
   // Command Menu State
   const [showMenu, setShowMenu] = useState(false);
@@ -108,6 +109,33 @@ const App: React.FC = () => {
   const addMessage = (role: 'user' | 'assistant', content: string, agent?: AgentRole) => {
     setMessages(prev => [...prev, { id: crypto.randomUUID(), role, content, agent, timestamp: Date.now() }]);
   };
+
+  const onFitView = useCallback(() => {
+    if (elements.length === 0) return;
+    
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    elements.forEach(el => {
+      minX = Math.min(minX, el.x);
+      minY = Math.min(minY, el.y);
+      maxX = Math.max(maxX, el.x + 550); 
+      maxY = Math.max(maxY, el.y + 600); 
+    });
+
+    const padding = 100;
+    const width = maxX - minX + padding * 2;
+    const height = maxY - minY + padding * 2;
+    
+    const sidebarWidth = 420;
+    const viewportWidth = window.innerWidth - sidebarWidth;
+    const viewportHeight = window.innerHeight;
+    
+    const newScale = Math.min(viewportWidth / width, viewportHeight / height, 1.2);
+    const newOffsetX = (viewportWidth - (maxX + minX) * newScale) / 2;
+    const newOffsetY = (viewportHeight - (maxY + minY) * newScale) / 2;
+    
+    setScale(newScale);
+    setOffset({ x: newOffsetX, y: newOffsetY });
+  }, [elements]);
 
   const handleCommand = async (input: string) => {
     const trimmed = input.trim();
@@ -164,7 +192,6 @@ const App: React.FC = () => {
           addMessage('assistant', '未知指令。', AgentRole.INTERACTION_FEEDBACK);
       }
     } else {
-      // Default: Multi-agent flow
       startCollaborativeWorkflow(trimmed);
     }
   };
@@ -237,7 +264,26 @@ const App: React.FC = () => {
     }
   };
 
-  // Keyboard Navigation
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (mainRef.current) {
+      const rect = mainRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const factor = Math.pow(1.1, -e.deltaY / 100);
+      const newScale = Math.min(Math.max(scale * factor, 0.05), 5);
+
+      const worldX = (mouseX - offset.x) / scale;
+      const worldY = (mouseY - offset.y) / scale;
+
+      const newOffsetX = mouseX - worldX * newScale;
+      const newOffsetY = mouseY - worldY * newScale;
+
+      setScale(newScale);
+      setOffset({ x: newOffsetX, y: newOffsetY });
+    }
+  }, [scale, offset]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
@@ -319,6 +365,7 @@ const App: React.FC = () => {
       </aside>
 
       <main 
+        ref={mainRef}
         className={`flex-1 relative overflow-hidden bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:60px_60px] ${isSpaceDown ? 'cursor-grabbing' : mode === 'pan' ? 'cursor-grab' : 'cursor-crosshair'}`}
         onMouseDown={(e) => { if(isSpaceDown || mode==='pan' || e.shiftKey) setDraggingId('pan'); }}
         onMouseMove={(e) => {
@@ -326,11 +373,7 @@ const App: React.FC = () => {
           else if (draggingId) setElements(prev => prev.map(el => el.id === draggingId ? { ...el, x: el.x + e.movementX / scale, y: el.y + e.movementY / scale } : el));
         }}
         onMouseUp={() => setDraggingId(null)}
-        onWheel={(e) => {
-          const factor = Math.pow(1.2, -e.deltaY / 200);
-          const newScale = Math.min(Math.max(scale * factor, 0.05), 5);
-          setScale(newScale);
-        }}
+        onWheel={handleWheel}
       >
         <div className="absolute inset-0 origin-top-left" style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}>
           {elements.map(el => (
@@ -376,7 +419,7 @@ const App: React.FC = () => {
           onZoomIn={() => setScale(s => Math.min(s * 1.3, 5))} 
           onZoomOut={() => setScale(s => Math.max(s * 0.7, 0.05))}
           onReset={() => { setOffset({x:100,y:100}); setScale(0.8); }}
-          onFitView={() => {}} 
+          onFitView={onFitView} 
           onAutoLayout={() => handleCommand('/layout')}
           onExportImage={() => {}} 
           onSaveProject={() => handleCommand('/save')}
