@@ -1,9 +1,10 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
-  Send, Undo2, Redo2, Terminal, Zap, Trash2, RefreshCw, 
+  Send, Undo2, Redo2, Terminal, Zap, Trash2, RefreshCw, Square,
   Wand2, Link as LinkIcon, StickyNote, ImageIcon, ShieldCheck, 
-  Save, FolderOpen, Eraser, Command, MousePointer2, Hand, Focus, Home
+  Save, FolderOpen, Eraser, Command, MousePointer2, Hand, Focus, Home,
+  Loader2
 } from 'lucide-react';
 import { 
   AgentRole, CanvasElement, DiagramType, THEMES, Connection, ChatMessage, ThinkingStep 
@@ -56,6 +57,10 @@ const App: React.FC = () => {
   const [mode, setMode] = useState<InteractionMode>('select');
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [isSpaceDown, setIsSpaceDown] = useState(false);
+
+  // Abort Controllers
+  const globalAbortControllerRef = useRef<AbortController | null>(null);
+  const cardAbortControllersRef = useRef<Record<string, AbortController>>({});
 
   // History for Undo/Redo
   const [history, setHistory] = useState<{elements: CanvasElement[], connections: Connection[]}[]>([]);
@@ -137,6 +142,23 @@ const App: React.FC = () => {
     setOffset({ x: newOffsetX, y: newOffsetY });
   }, [elements]);
 
+  const stopGlobalAI = () => {
+    if (globalAbortControllerRef.current) {
+      globalAbortControllerRef.current.abort();
+      globalAbortControllerRef.current = null;
+      setIsProcessing(false);
+      addMessage('assistant', '已停止生成。', AgentRole.INTERACTION_FEEDBACK);
+    }
+  };
+
+  const stopCardAI = (id: string) => {
+    if (cardAbortControllersRef.current[id]) {
+      cardAbortControllersRef.current[id].abort();
+      delete cardAbortControllersRef.current[id];
+      setElements(prev => prev.map(i => i.id === id ? { ...i, isLocalUpdating: false } : i));
+    }
+  };
+
   const handleCommand = async (input: string) => {
     const trimmed = input.trim();
     if (!trimmed) return;
@@ -197,21 +219,32 @@ const App: React.FC = () => {
   };
 
   const startCollaborativeWorkflow = async (input: string) => {
+    if (isProcessing) {
+      stopGlobalAI();
+      return;
+    }
+    
     setIsProcessing(true);
     setThinkingSteps([]);
     addMessage('user', input);
     pushToHistory();
+    
+    const controller = new AbortController();
+    globalAbortControllerRef.current = controller;
 
     try {
       addThinkingStep(AgentRole.CLASSIFIER, "正在解构需求层级...");
       const hierarchyMatch = input.match(/层级为[：:](.+)/);
       const customHierarchy = hierarchyMatch ? hierarchyMatch[1] : undefined;
+      
       const plan = await classifyContentAgent(input, customHierarchy);
+      if (controller.signal.aborted) return;
       
       addThinkingStep(AgentRole.TITLER, `已规划 ${plan.nodes.length} 个核心模块。`);
       const newElements: CanvasElement[] = [];
       
       for (const node of plan.nodes) {
+        if (controller.signal.aborted) break;
         addThinkingStep(AgentRole.GENERATOR, `正在绘制 [${node.title}]...`);
         const code = await generateDiagramAgent(node, input);
         newElements.push({
@@ -221,12 +254,17 @@ const App: React.FC = () => {
         });
       }
 
-      setElements(prev => [...prev, ...newElements]);
-      addMessage('assistant', `架构已生成：包含 ${plan.nodes.length} 个子图表。`, AgentRole.SCHEDULER);
+      if (!controller.signal.aborted) {
+        setElements(prev => [...prev, ...newElements]);
+        addMessage('assistant', `架构已生成：包含 ${plan.nodes.length} 个子图表。`, AgentRole.SCHEDULER);
+      }
     } catch (err) {
-      addMessage('assistant', "协作生成失败，请重试。", AgentRole.INTERACTION_FEEDBACK);
+      if (!controller.signal.aborted) {
+        addMessage('assistant', "协作生成失败，请重试。", AgentRole.INTERACTION_FEEDBACK);
+      }
     } finally {
       setIsProcessing(false);
+      globalAbortControllerRef.current = null;
     }
   };
 
@@ -253,14 +291,28 @@ const App: React.FC = () => {
   };
 
   const updateCardCode = async (el: CanvasElement) => {
+    if (el.isLocalUpdating) {
+      stopCardAI(el.id);
+      return;
+    }
+    
     if (!el.localChatInput?.trim()) return;
     setElements(prev => prev.map(i => i.id === el.id ? { ...i, isLocalUpdating: true } : i));
+    
+    const controller = new AbortController();
+    cardAbortControllersRef.current[el.id] = controller;
+    
     try {
       const newCode = await modifyDiagramContent(el.mermaidCode, el.localChatInput);
+      if (controller.signal.aborted) return;
       pushToHistory();
       setElements(prev => prev.map(i => i.id === el.id ? { ...i, mermaidCode: newCode, localChatInput: '', isLocalUpdating: false } : i));
     } catch (e) {
-      setElements(prev => prev.map(i => i.id === el.id ? { ...i, isLocalUpdating: false } : i));
+      if (!controller.signal.aborted) {
+        setElements(prev => prev.map(i => i.id === el.id ? { ...i, isLocalUpdating: false } : i));
+      }
+    } finally {
+      delete cardAbortControllersRef.current[el.id];
     }
   };
 
@@ -314,8 +366,8 @@ const App: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto p-7 space-y-7 no-scrollbar">
           <AgentPanel agents={[
-            { role: AgentRole.SCHEDULER, status: isProcessing ? 'processing' : 'completed', message: isProcessing ? '计算中...' : '在线' },
-            { role: AgentRole.CLASSIFIER, status: 'idle', message: '等待输入' },
+            { role: AgentRole.SCHEDULER, status: isProcessing ? 'processing' : 'completed', message: isProcessing ? '正在拼命思考中...' : '在线' },
+            { role: AgentRole.CLASSIFIER, status: 'idle', message: '就绪' },
             { role: AgentRole.GENERATOR, status: 'idle', message: '就绪' }
           ]} thinkingSteps={thinkingSteps} />
 
@@ -323,11 +375,18 @@ const App: React.FC = () => {
             {messages.map((msg) => (
               <div key={msg.id} className={`flex flex-col gap-2 ${msg.role === 'user' ? 'items-end' : 'items-start'} animate-in fade-in duration-300`}>
                 {msg.agent && <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2"><Zap className="w-2.5 h-2.5" />{msg.agent}</span>}
-                <div className={`max-w-[95%] px-5 py-4 rounded-3xl text-xs border ${msg.role === 'user' ? 'bg-indigo-600 border-indigo-400/30' : 'bg-slate-800/80 border-slate-700/50'}`}>
+                <div className={`max-w-[95%] px-5 py-4 rounded-3xl text-xs border ${msg.role === 'user' ? 'bg-indigo-600 border-indigo-400/30 shadow-[0_0_20px_rgba(79,70,229,0.3)]' : 'bg-slate-800/80 border-slate-700/50 backdrop-blur-sm'}`}>
                   <MarkdownText text={msg.content} />
                 </div>
               </div>
             ))}
+            {isProcessing && (
+              <div className="flex items-center gap-2 px-4 py-2 text-indigo-400 animate-pulse">
+                {/* Loader2 added to lucide-react import */}
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span className="text-[10px] font-bold tracking-widest uppercase">AI 正在输入...</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -357,9 +416,15 @@ const App: React.FC = () => {
                 } else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCommand(userInput); setUserInput(''); }
               }} 
               placeholder="输入需求或使用 / 指令..." 
-              className="w-full bg-slate-900 border border-slate-700/50 rounded-[28px] pl-6 pr-14 py-5 text-xs focus:border-indigo-500 outline-none resize-none min-h-[80px] no-scrollbar shadow-inner" 
+              className="w-full bg-slate-900 border border-slate-700/50 rounded-[28px] pl-6 pr-14 py-5 text-xs focus:border-indigo-500 outline-none resize-none min-h-[80px] no-scrollbar shadow-inner transition-all duration-300" 
             />
-            <button onClick={() => { handleCommand(userInput); setUserInput(''); }} className="absolute right-3.5 bottom-3.5 p-3 bg-indigo-600 rounded-[20px] shadow-lg active:scale-95 transition-all"><Send className="w-4 h-4 text-white" /></button>
+            <button 
+              onClick={() => { handleCommand(userInput); if(!isProcessing) setUserInput(''); }} 
+              className={`absolute right-3.5 bottom-3.5 p-3 rounded-[20px] shadow-lg active:scale-95 transition-all duration-500 ${isProcessing ? 'bg-rose-600 hover:bg-rose-500 animate-pulse' : 'bg-indigo-600 hover:bg-indigo-500'}`}
+              title={isProcessing ? "停止生成" : "发送指令"}
+            >
+              {isProcessing ? <Square className="w-4 h-4 text-white fill-white" /> : <Send className="w-4 h-4 text-white" />}
+            </button>
           </div>
         </div>
       </aside>
@@ -383,7 +448,7 @@ const App: React.FC = () => {
                   <div className={`w-8 h-8 rounded-lg ${el.type === DiagramType.NOTE ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'} flex items-center justify-center font-black text-[10px] border`}>{el.level || 'N'}</div>
                   <span className="text-[11px] font-black uppercase tracking-widest text-slate-100">{el.title}</span>
                 </div>
-                <button onClick={() => { pushToHistory(); setElements(prev => prev.filter(i => i.id !== el.id)); }} className="text-slate-600 hover:text-rose-400 p-2"><Trash2 className="w-5 h-5" /></button>
+                <button onClick={() => { pushToHistory(); setElements(prev => prev.filter(i => i.id !== el.id)); }} className="text-slate-600 hover:text-rose-400 p-2 transition-colors"><Trash2 className="w-5 h-5" /></button>
               </div>
               <div className="p-9">
                 {el.type === DiagramType.NOTE ? (
@@ -400,11 +465,14 @@ const App: React.FC = () => {
                         value={el.localChatInput || ''} 
                         onChange={(e) => setElements(prev => prev.map(i => i.id === el.id ? { ...i, localChatInput: e.target.value } : i))} 
                         onKeyDown={(e) => e.key === 'Enter' && updateCardCode(el)} 
-                        placeholder="微调指令..." 
-                        className="flex-1 bg-slate-950/50 border border-slate-800 rounded-2xl px-5 py-3 text-[10px] outline-none focus:border-indigo-500/50" 
+                        placeholder="微调此模块的逻辑..." 
+                        className="flex-1 bg-slate-950/50 border border-slate-800 rounded-2xl px-5 py-3 text-[10px] outline-none focus:border-indigo-500/50 transition-all" 
                       />
-                      <button onClick={() => updateCardCode(el)} disabled={el.isLocalUpdating} className="p-3 bg-indigo-500/10 text-indigo-400 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all">
-                        {el.isLocalUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      <button 
+                        onClick={() => updateCardCode(el)} 
+                        className={`p-3 rounded-2xl transition-all duration-300 ${el.isLocalUpdating ? 'bg-rose-500/10 text-rose-400' : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-600 hover:text-white'}`}
+                      >
+                        {el.isLocalUpdating ? <Square className="w-4 h-4 fill-current animate-pulse" /> : <Send className="w-4 h-4" />}
                       </button>
                     </div>
                   </>
