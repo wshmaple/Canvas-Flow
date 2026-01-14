@@ -1,20 +1,29 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
 
-# Run and deploy your AI Studio app
+# 多智能体图表架构专家 (Multi-Agent Diagram Architect)
 
-This contains everything you need to run your app locally.
+## 核心功能
+1. **深度内容解构**：基于 Gemini 3 Pro 引擎，将长篇、复杂的需求文档或架构描述一键解构为结构化的多图表生态系统。
+2. **无限画布交互**：采用无限缩放画布，支持自由拖拽、缩放及卡片定位。
+3. **嵌套下钻 (Drill-down)**：支持对图表中的特定节点进行二次解析。点击节点即可生成该组件的内部逻辑图，实现从宏观到微观的无限探索。
+4. **多智能体协同**：
+   - **调度智能体**：统筹全局逻辑与任务分配。
+   - **解析/生成智能体**：负责语义提取与 Mermaid 代码生成。
+   - **布局智能体**：采用曼哈顿路径算法，实现智能避障与自动整理。
+5. **实时局部微调**：每个图表卡片均内置对话框，支持针对特定模块发送修改指令（如：更改颜色、调整逻辑分支）。
+6. **视觉实验室**：AI 驱动的配色系统，根据核心色调自动生成 6 种专业的视觉配色方案。
+7. **时光机历史记录**：自动保存最近 20 个版本的画布状态，支持一键回溯。
+8. **智能导航**：内置小地图 (Minimap)，在大规模拓扑图中快速定位目标。
 
-View your app in AI Studio: https://ai.studio/apps/drive/1T-fBJ8U63Q5srCAiS9POa1Ii3RO_tq8D
+## 技术栈
+- **Frontend**: React 19, Tailwind CSS, Lucide Icons.
+- **AI Engine**: Google Gemini 3 Pro (via @google/genai SDK).
+- **Diagramming**: Mermaid.js (实时渲染).
+- **Layout**: 自研层级曼哈顿路径算法.
+- **Export**: html2canvas (高清画布导出).
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 使用指南
+- **Shift + 左键拖拽**：平移画布。
+- **滚轮**：缩放。
+- **点击节点**：触发深度下钻分析。
+- **卡片底部输入框**：输入自然语言微调当前图表。
+- **Wand 按钮**：一键自动整理全场布局。

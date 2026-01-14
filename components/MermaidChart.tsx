@@ -6,16 +6,17 @@ interface MermaidChartProps {
   id: string;
   code: string;
   themeVars?: any;
+  onNodeClick?: (nodeText: string) => void;
 }
 
-const MermaidChart: React.FC<MermaidChartProps> = ({ id, code, themeVars }) => {
+const MermaidChart: React.FC<MermaidChartProps> = ({ id, code, themeVars, onNodeClick }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const renderChart = async () => {
       if (containerRef.current && code) {
         try {
-          mermaid.initialize({
+          const config = {
             startOnLoad: false,
             theme: 'base',
             securityLevel: 'loose',
@@ -25,15 +26,40 @@ const MermaidChart: React.FC<MermaidChartProps> = ({ id, code, themeVars }) => {
               primaryTextColor: '#fff',
               lineColor: '#818cf8',
             }
-          });
+          };
+
+          mermaid.initialize(config);
           
-          // Clear previous content
           containerRef.current.innerHTML = '';
           const chartId = `mermaid-${id.replace(/[^a-zA-Z0-9]/g, '')}`;
           const { svg } = await mermaid.render(chartId, code);
           
           if (containerRef.current) {
             containerRef.current.innerHTML = svg;
+            
+            // Post-render: Add interactivity
+            const svgEl = containerRef.current.querySelector('svg');
+            if (svgEl && onNodeClick) {
+              // Find all nodes (usually rects or polygons with text labels)
+              const nodes = svgEl.querySelectorAll('.node, .mermaid-node, .cluster');
+              nodes.forEach(node => {
+                const element = node as HTMLElement;
+                element.style.cursor = 'pointer';
+                element.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  const label = element.querySelector('.nodeLabel, text')?.textContent || '';
+                  if (label) onNodeClick(label.trim());
+                });
+                
+                // Visual feedback on hover
+                element.addEventListener('mouseenter', () => {
+                  element.setAttribute('filter', 'drop-shadow(0 0 8px rgba(99, 102, 241, 0.5))');
+                });
+                element.addEventListener('mouseleave', () => {
+                  element.removeAttribute('filter');
+                });
+              });
+            }
           }
         } catch (error) {
           console.error('Mermaid render error:', error);
@@ -45,10 +71,10 @@ const MermaidChart: React.FC<MermaidChartProps> = ({ id, code, themeVars }) => {
     };
 
     renderChart();
-  }, [id, code, themeVars]);
+  }, [id, code, themeVars, onNodeClick]);
 
   return (
-    <div ref={containerRef} className="mermaid-container flex items-center justify-center p-4 bg-transparent rounded-lg overflow-hidden min-h-[150px]" />
+    <div ref={containerRef} className="mermaid-container flex items-center justify-center p-4 bg-transparent rounded-lg overflow-hidden min-h-[150px] transition-all duration-500" />
   );
 };
 

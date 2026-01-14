@@ -18,7 +18,7 @@ export enum DiagramType {
 export interface ColorInfo {
   hex: string;
   rgb: string;
-  role: string; // e.g., "背景", "主色", "强调色"
+  role: string;
 }
 
 export interface PaletteScheme {
@@ -26,7 +26,7 @@ export interface PaletteScheme {
   name: string;
   principle: string;
   colors: ColorInfo[];
-  contrastRatio: string; // e.g., "7.2:1"
+  contrastRatio: string;
   isWcagPassed: boolean;
   sceneSuggestions: string;
   usageNotes: string;
@@ -87,6 +87,20 @@ export interface AgentStatus {
   message: string;
 }
 
+export interface ThinkingStep {
+  id: string;
+  agent: AgentRole;
+  content: string;
+  timestamp: number;
+}
+
+export interface Connection {
+  id: string;
+  fromId: string;
+  toId: string;
+  label?: string;
+}
+
 export interface CanvasElement {
   id: string;
   type: DiagramType;
@@ -99,6 +113,16 @@ export interface CanvasElement {
   isEditing?: boolean;
   parentId?: string;
   themeId: string;
+  localChatInput?: string;
+  isLocalUpdating?: boolean;
+}
+
+export interface CanvasSnapshot {
+  id: string;
+  timestamp: number;
+  label: string;
+  elements: CanvasElement[];
+  connections: Connection[];
 }
 
 export interface DiagramData {
@@ -123,4 +147,9 @@ export interface DiagramData {
 export interface CollaborativeResponse {
   summary: string;
   diagrams: DiagramData[];
+  relationships: {
+    fromIndex: number;
+    toIndex: number;
+    label: string;
+  }[];
 }
