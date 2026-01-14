@@ -3,7 +3,8 @@ import React, { useState } from 'react';
 import { 
   Plus, Minus, Maximize2, Minimize2, Home, Wand2, 
   Camera, Hash, MousePointer2, Hand, Info, Focus,
-  Save, FolderOpen, Trash2, Download, Upload
+  Save, FolderOpen, Trash2, Download, Upload,
+  Undo2, Redo2
 } from 'lucide-react';
 
 export type InteractionMode = 'select' | 'pan';
@@ -26,11 +27,16 @@ interface CanvasControlHubProps {
   onToggleFullScreen: () => void;
   showGrid: boolean;
   onToggleGrid: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 const CanvasControlHub: React.FC<CanvasControlHubProps> = ({
   scale, mode, onSetMode, onZoomIn, onZoomOut, onSetScale, onReset, onFitView, onAutoLayout, 
-  onExportImage, onSaveProject, onLoadProject, onClearCanvas, isFullScreen, onToggleFullScreen, showGrid, onToggleGrid
+  onExportImage, onSaveProject, onLoadProject, onClearCanvas, isFullScreen, onToggleFullScreen, showGrid, onToggleGrid,
+  onUndo, onRedo, canUndo, canRedo
 }) => {
   const [showPresets, setShowPresets] = useState(false);
   const zoomPercentage = Math.round(scale * 100);
@@ -52,6 +58,26 @@ const CanvasControlHub: React.FC<CanvasControlHubProps> = ({
           icon={<Hand className="w-4 h-4" />} 
           active={mode === 'pan'}
           tooltip="抓手模式 (H / Space)" 
+        />
+      </div>
+
+      <div className="w-[1px] h-6 bg-white/10 mx-0.5" />
+
+      {/* Group: History */}
+      <div className="flex items-center bg-slate-950/40 rounded-xl p-0.5 border border-white/5 gap-0.5">
+        <ControlButton 
+          onClick={onUndo} 
+          icon={<Undo2 className="w-4 h-4" />} 
+          disabled={!canUndo}
+          tooltip="撤销 (Ctrl+Z)" 
+          className={!canUndo ? 'opacity-30' : ''}
+        />
+        <ControlButton 
+          onClick={onRedo} 
+          icon={<Redo2 className="w-4 h-4" />} 
+          disabled={!canRedo}
+          tooltip="重做 (Ctrl+Y)" 
+          className={!canRedo ? 'opacity-30' : ''}
         />
       </div>
 
@@ -127,7 +153,7 @@ const CanvasControlHub: React.FC<CanvasControlHubProps> = ({
               <ul className="space-y-2 text-[10px] text-slate-400">
                 <li className="flex justify-between border-b border-white/5 pb-1.5"><span>全量备份</span><span className="text-indigo-400">Export JSON</span></li>
                 <li className="flex justify-between border-b border-white/5 pb-1.5"><span>画布平移</span><span className="text-indigo-400">Space / Shift+Drag</span></li>
-                <li className="flex justify-between border-b border-white/5 pb-1.5"><span>缩放</span><span className="text-indigo-400">滚轮 (以鼠标为中心)</span></li>
+                <li className="flex justify-between border-b border-white/5 pb-1.5"><span>撤销/重做</span><span className="text-indigo-400">Ctrl + Z / Y</span></li>
                 <li className="flex justify-between"><span>下钻分析</span><span className="text-indigo-400">点击图表节点</span></li>
               </ul>
            </div>
@@ -148,25 +174,29 @@ interface ControlButtonProps {
   icon: React.ReactNode;
   tooltip: string;
   active?: boolean;
+  disabled?: boolean;
   className?: string;
 }
 
-const ControlButton: React.FC<ControlButtonProps> = ({ onClick, icon, tooltip, active, className = "" }) => (
+const ControlButton: React.FC<ControlButtonProps> = ({ onClick, icon, tooltip, active, disabled, className = "" }) => (
   <button
     onClick={(e) => {
       e.stopPropagation();
-      onClick();
+      if (!disabled) onClick();
     }}
+    disabled={disabled}
     className={`group relative p-2 rounded-xl transition-all active:scale-90 ${
       active 
       ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.5)]' 
       : 'text-slate-400 hover:text-white hover:bg-white/10'
-    } ${className}`}
+    } ${disabled ? 'cursor-not-allowed text-slate-700' : ''} ${className}`}
   >
     {icon}
-    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-2 py-1.5 bg-slate-950 text-white text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-all translate-y-1 group-hover:translate-y-0 whitespace-nowrap shadow-2xl border border-white/10 z-[110]">
-      {tooltip}
-    </span>
+    {!disabled && (
+      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-2 py-1.5 bg-slate-950 text-white text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-all translate-y-1 group-hover:translate-y-0 whitespace-nowrap shadow-2xl border border-white/10 z-[110]">
+        {tooltip}
+      </span>
+    )}
   </button>
 );
 

@@ -12,7 +12,17 @@ export enum DiagramType {
   FLOWCHART = 'flowchart',
   SEQUENCE = 'sequenceDiagram',
   GANTT = 'gantt',
-  MINDMAP = 'mindmap'
+  MINDMAP = 'mindmap',
+  NOTE = 'note'
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  agent?: AgentRole;
+  content: string;
+  timestamp: number;
+  isStreaming?: boolean;
 }
 
 export interface ElementTheme {
@@ -69,18 +79,15 @@ export interface AgentStatus {
   message: string;
 }
 
+/**
+ * Interface representing a step in the agent's thinking process,
+ * used by the AgentPanel to display the reasoning chain.
+ */
 export interface ThinkingStep {
   id: string;
-  agent: AgentRole;
+  agent: string;
   content: string;
   timestamp: number;
-}
-
-export interface Connection {
-  id: string;
-  fromId: string;
-  toId: string;
-  label?: string;
 }
 
 export interface CanvasElement {
@@ -92,16 +99,20 @@ export interface CanvasElement {
   scale: number;
   title: string;
   deconstructedElements: string[];
-  isEditing?: boolean;
   parentId?: string;
   themeId: string;
   localChatInput?: string;
   isLocalUpdating?: boolean;
+  content?: string;
 }
 
-/**
- * 整个画布的完整持久化状态
- */
+export interface Connection {
+  id: string;
+  fromId: string;
+  toId: string;
+  label?: string;
+}
+
 export interface CanvasProjectState {
   version: string;
   timestamp: number;
@@ -116,45 +127,14 @@ export interface CanvasProjectState {
 
 export interface DiagramData {
   title: string;
-  parsing: {
-    entities: string[];
-    relations: string[];
-  };
-  decision: {
-    recommendedType: DiagramType;
-    reasoning: string;
-  };
-  generation: {
-    mermaidCode: string;
-  };
-  layoutRelativePosition: {
-    x: number;
-    y: number;
-  };
+  parsing: { entities: string[]; relations: string[] };
+  decision: { recommendedType: DiagramType; reasoning: string };
+  generation: { mermaidCode: string };
+  layoutRelativePosition: { x: number; y: number };
 }
 
 export interface CollaborativeResponse {
   summary: string;
   diagrams: DiagramData[];
-  relationships: {
-    fromIndex: number;
-    toIndex: number;
-    label: string;
-  }[];
-}
-
-// Define PaletteScheme to match the expected return type in geminiService.ts
-export interface PaletteScheme {
-  type: string;
-  name: string;
-  principle: string;
-  colors: {
-    hex: string;
-    rgb: string;
-    role: string;
-  }[];
-  contrastRatio: string;
-  isWcagPassed: boolean;
-  sceneSuggestions: string;
-  usageNotes: string;
+  relationships: { fromIndex: number; toIndex: number; label: string }[];
 }

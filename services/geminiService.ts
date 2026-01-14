@@ -1,7 +1,8 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { CollaborativeResponse, PaletteScheme, CanvasElement, DiagramData, DiagramType } from "../types";
+import { CollaborativeResponse, CanvasElement, DiagramData, DiagramType } from "../types";
 
+// Initialize the Google GenAI client using the API key from environment variables.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const processCollaborativeContent = async (content: string): Promise<CollaborativeResponse> => {
@@ -83,7 +84,7 @@ export const drillDownElement = async (parent: CanvasElement, entity: string): P
     model: 'gemini-3-pro-preview',
     contents: `父级图表：[${parent.title}] (类型: ${parent.type})。
     你需要对该图表中的子组件「${entity}」进行深度下钻拆解。
-    请生成一个更详尽的、专门描述「${entity}」内部逻辑或结构的 Mermaid 图表。`,
+    请生成一个更详尽的、专门描述「${entity}」内部逻辑 or 结构的 Mermaid 图表。`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -128,75 +129,19 @@ export const drillDownElement = async (parent: CanvasElement, entity: string): P
   return JSON.parse(text);
 };
 
-export const handleGlobalAction = async (elements: CanvasElement[], instruction: string): Promise<any> => {
+/**
+ * 全局工作空间分析
+ */
+export const analyzeWorkspace = async (elements: CanvasElement[], query: string): Promise<string> => {
+  const context = elements.map(el => `[图表: ${el.title}] 类型: ${el.type}\n内容: ${el.mermaidCode || el.content}`).join('\n\n');
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `当前画布包含以下图表信息：${JSON.stringify(elements.map(el => ({ id: el.id, title: el.title, type: el.type })))}。
-    用户的全局指令是："${instruction}"。
-    请分析指令并返回对应的操作序列。`,
+    contents: `基于当前架构工作空间的所有内容：\n\n${context}\n\n用户问题：${query}\n\n请进行深度分析并给出建议。`,
     config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          reply: { type: Type.STRING, description: "对用户的友好回复" },
-          actions: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                type: { type: Type.STRING, description: "UPDATE_CODE, DELETE, MOVE_RELATIVELY" },
-                targetId: { type: Type.STRING },
-                payload: { type: Type.OBJECT, description: "如 { code: '...' } 或 { dx: 100, dy: 100 }" }
-              },
-              required: ['type', 'targetId', 'payload']
-            }
-          }
-        },
-        required: ['reply', 'actions']
-      }
+      systemInstruction: "你是一个资深的架构审查专家。请结合画布上所有的子模块逻辑，回答用户关于整体系统的架构性问题。"
     }
   });
-
-  const text = response.text;
-  if (!text) throw new Error("全局操作失败");
-  return JSON.parse(text);
-};
-
-export const generateProfessionalPalette = async (baseColor: string): Promise<PaletteScheme[]> => {
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: `配色专家：基于 "${baseColor}" 生成 6 类方案。`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            type: { type: Type.STRING },
-            name: { type: Type.STRING },
-            principle: { type: Type.STRING },
-            colors: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: { hex: { type: Type.STRING }, rgb: { type: Type.STRING }, role: { type: Type.STRING } }
-              }
-            },
-            contrastRatio: { type: Type.STRING },
-            isWcagPassed: { type: Type.BOOLEAN },
-            sceneSuggestions: { type: Type.STRING },
-            usageNotes: { type: Type.STRING }
-          }
-        }
-      }
-    }
-  });
-  
-  const text = response.text;
-  if (!text) throw new Error("配色方案生成失败");
-  return JSON.parse(text);
+  return response.text || "分析失败";
 };
 
 export const modifyDiagramContent = async (currentCode: string, instruction: string): Promise<string> => {
@@ -204,21 +149,13 @@ export const modifyDiagramContent = async (currentCode: string, instruction: str
     model: 'gemini-3-pro-preview',
     contents: `当前代码：\n\`\`\`mermaid\n${currentCode}\n\`\`\`\n\n修改指令：${instruction}\n\n请严格仅返回修改后的 Mermaid 代码块。`,
     config: {
-      systemInstruction: "你是一个专业的 Mermaid 代码专家。在处理修改指令时，你必须且仅能输出以 \`\`\`mermaid 开头并以 \`\`\` 结尾的代码块。严禁包含任何前导文本、后缀说明或解释性文字。如果用户要求进行分析，请将其结果体现为图表中的注释或节点，而不是外部文本。"
+      systemInstruction: "你是一个专业的 Mermaid 代码专家。在处理修改指令时，你必须且仅能输出以 \`\`\`mermaid 开头并以 \`\`\` 结尾的代码块。严禁包含任何前导文本、后缀说明或解释性文字。"
     }
   });
   
   const text = response.text;
   if (!text) throw new Error("图表修改失败");
-  
-  // Robustly extract content inside the first available code block
   const codeBlockRegex = /```(?:mermaid)?\s*([\s\S]*?)```/;
   const match = text.match(codeBlockRegex);
-  
-  if (match && match[1]) {
-    return match[1].trim();
-  }
-  
-  // Fallback: cleaning simple markers if regex failed but markers exist
-  return text.replace(/```mermaid/g, '').replace(/```/g, '').trim();
+  return match ? match[1].trim() : text.replace(/```mermaid/g, '').replace(/```/g, '').trim();
 };
