@@ -79,10 +79,6 @@ export interface AgentStatus {
   message: string;
 }
 
-/**
- * Interface representing a step in the agent's thinking process,
- * used by the AgentPanel to display the reasoning chain.
- */
 export interface ThinkingStep {
   id: string;
   agent: string;
