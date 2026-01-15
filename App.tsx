@@ -36,6 +36,7 @@ const MarkdownText: React.FC<{ text: string, elements: CanvasElement[], onTelepo
   
   const renderContent = (content: string) => {
     let result: React.ReactNode[] = [content];
+    // Fix: Corrected property access to title.length on CanvasElement comparison
     const sortedElements = [...elements].sort((a, b) => b.title.length - a.title.length);
 
     sortedElements.forEach(el => {
@@ -142,6 +143,7 @@ const App: React.FC = () => {
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mainRef = useRef<HTMLElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
 
   const [showMenu, setShowMenu] = useState(false);
   const [menuIndex, setMenuIndex] = useState(0);
@@ -161,6 +163,13 @@ const App: React.FC = () => {
     setShowMentionMenu(lastAtIdx !== -1 && filteredMentions.length > 0);
     setMentionMenuIndex(0);
   }, [userInput, filteredMentions.length]);
+
+  // 消息更新后自动滚动到底部
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: 'smooth' });
+    }
+  }, [messages, isProcessing]);
 
   const addThinkingStep = (agent: AgentRole, content: string) => {
     setThinkingSteps(prev => [...prev, { id: crypto.randomUUID(), agent, content, timestamp: Date.now() }]);
@@ -450,7 +459,8 @@ const App: React.FC = () => {
            </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-7 space-y-7 no-scrollbar scroll-smooth">
+        {/* 聊天消息滚动区域，增加 pb-32 以防止消息被底部的 Quick Actions 气泡遮挡 */}
+        <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-7 space-y-7 no-scrollbar scroll-smooth pb-32">
           <AgentPanel agents={[
             { role: AgentRole.SCHEDULER, status: isProcessing ? 'processing' : 'completed', message: isProcessing ? '分析拓扑结构中...' : '在线' },
             { role: AgentRole.CLASSIFIER, status: 'idle', message: '就绪' },
@@ -567,13 +577,18 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-7 border-t border-slate-800 bg-slate-950/40 relative">
-          <div className="absolute bottom-full left-0 right-0 px-7 pb-4 flex gap-2 overflow-x-auto no-scrollbar mask-fade-edges z-50">
+        {/* 输入框及其上方漂浮气泡容器 */}
+        <div className="p-7 border-t border-slate-800 bg-slate-950/80 relative z-30">
+          {/* Quick Action Bubbles with a gradient mask background for better separation from scrolled messages */}
+          <div className="absolute bottom-full left-0 right-0 px-7 pb-6 flex gap-2 overflow-x-auto no-scrollbar z-50 pointer-events-none">
+            {/* 渐变遮罩层，用于提升漂浮气泡的可读性 */}
+            <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/90 to-transparent -z-10 pointer-events-none" />
+            
             {quickActions.map(action => (
               <button 
                 key={action.id} 
                 onClick={action.onClick}
-                className="flex items-center gap-2 px-4 py-2.5 bg-slate-800/80 backdrop-blur-3xl border border-white/5 hover:border-indigo-500/50 hover:bg-slate-700 rounded-2xl text-[10px] font-black whitespace-nowrap transition-all shadow-xl group active:scale-95"
+                className="pointer-events-auto flex items-center gap-2 px-4 py-2.5 bg-slate-800/90 backdrop-blur-3xl border border-white/10 hover:border-indigo-500/50 hover:bg-slate-700 rounded-2xl text-[10px] font-black whitespace-nowrap transition-all shadow-[0_8px_20px_rgba(0,0,0,0.4)] group active:scale-95"
               >
                 <span className="group-hover:scale-125 transition-transform">{action.icon}</span>
                 {action.label}
