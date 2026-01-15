@@ -4,7 +4,7 @@ import {
   Send, Undo2, Redo2, Terminal, Zap, Trash2, RefreshCw, Square,
   Wand2, Link as LinkIcon, StickyNote, ImageIcon, ShieldCheck, 
   Save, FolderOpen, Eraser, Command, MousePointer2, Hand, Focus, Home,
-  Loader2, Download, Code2, Eye, CheckCircle2, XCircle, Layout, ChevronRight
+  Loader2, Download, Code2, Eye, CheckCircle2, XCircle, Layout, ChevronRight, Edit3
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { 
@@ -31,28 +31,31 @@ const COMMAND_REGISTRY = [
 ];
 
 const MarkdownText: React.FC<{ text: string, elements: CanvasElement[], onTeleport: (id: string) => void }> = ({ text, elements, onTeleport }) => {
-  // Enhanced pattern to match card titles for teleportation
   const parts = text.split(/(```[\s\S]*?```|\n)/g);
   
   const renderContent = (content: string) => {
-    // Check if content contains any existing card titles
     let result: React.ReactNode[] = [content];
     
-    elements.forEach(el => {
+    // 按长度排序标题，防止短标题匹配长标题的一部分
+    const sortedElements = [...elements].sort((a, b) => b.title.length - a.title.length);
+
+    sortedElements.forEach(el => {
       const newResult: React.ReactNode[] = [];
       result.forEach(part => {
         if (typeof part === 'string') {
-          const splitRegex = new RegExp(`(【${el.title}】|"${el.title}"|${el.title})`, 'g');
+          // 匹配多种引用格式：【标题】、"标题"、或者是独立的标题名
+          const splitRegex = new RegExp(`(【${el.title}】|"${el.title}"|'${el.title}')`, 'g');
           const segments = part.split(splitRegex);
           segments.forEach(seg => {
-            if (seg === `【${el.title}】` || seg === `"${el.title}"` || seg === el.title) {
+            if (seg === `【${el.title}】` || seg === `"${el.title}"` || seg === `'${el.title}'`) {
               newResult.push(
                 <button 
                   key={crypto.randomUUID()}
                   onClick={() => onTeleport(el.id)}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 rounded-md hover:bg-indigo-500/20 transition-all font-bold mx-0.5 group"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-500/15 border border-indigo-400/30 text-indigo-300 rounded-md hover:bg-indigo-500/30 transition-all font-bold mx-0.5 group"
+                  title="点击飞跃至此模块"
                 >
-                  <Focus className="w-2.5 h-2.5 group-hover:scale-110" />
+                  <Focus className="w-2.5 h-2.5 group-hover:scale-110 transition-transform" />
                   {seg}
                 </button>
               );
@@ -71,11 +74,11 @@ const MarkdownText: React.FC<{ text: string, elements: CanvasElement[], onTelepo
   };
 
   return (
-    <div className="space-y-2 break-words">
+    <div className="space-y-2 break-words leading-relaxed">
       {parts.map((part, i) => {
         if (part.startsWith('```')) {
           const code = part.replace(/```(\w+)?\n?/, '').replace(/```$/, '');
-          return <pre key={i} className="bg-black/40 p-3 rounded-xl overflow-x-auto font-mono text-[10px] border border-white/5 text-indigo-200">{code}</pre>;
+          return <pre key={i} className="bg-black/40 p-4 rounded-2xl overflow-x-auto font-mono text-[10px] border border-white/5 text-indigo-200 my-2">{code}</pre>;
         }
         if (part === '\n') return <div key={i} className="h-1" />;
         return <span key={i} className="text-slate-300">{renderContent(part)}</span>;
@@ -96,6 +99,7 @@ const App: React.FC = () => {
   const [mode, setMode] = useState<InteractionMode>('select');
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [isSpaceDown, setIsSpaceDown] = useState(false);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   
   const [showSourceMap, setShowSourceMap] = useState<Record<string, boolean>>({});
 
@@ -157,7 +161,7 @@ const App: React.FC = () => {
 
   const onTeleport = useCallback((id: string) => {
     const el = elements.find(e => e.id === id);
-    if (!el || !mainRef.current) return;
+    if (!el) return;
     
     const viewportWidth = window.innerWidth - 420;
     const viewportHeight = window.innerHeight;
@@ -166,9 +170,11 @@ const App: React.FC = () => {
     const targetX = (viewportWidth / 2) - (el.x + 275) * targetScale;
     const targetY = (viewportHeight / 2) - (el.y + 300) * targetScale;
     
-    // Smooth transition
+    // 平滑滚动并高亮提示
     setScale(targetScale);
     setOffset({ x: targetX, y: targetY });
+    setHighlightedId(id);
+    setTimeout(() => setHighlightedId(null), 2500);
   }, [elements]);
 
   const onFitView = useCallback(() => {
@@ -203,7 +209,7 @@ const App: React.FC = () => {
       globalAbortControllerRef.current.abort();
       globalAbortControllerRef.current = null;
       setIsProcessing(false);
-      addMessage('assistant', '已停止生成。', AgentRole.INTERACTION_FEEDBACK);
+      addMessage('assistant', '已根据您的要求中止任务。', AgentRole.INTERACTION_FEEDBACK);
     }
   };
 
@@ -251,25 +257,25 @@ const App: React.FC = () => {
             const p = pos.find(p => p.id === el.id);
             return p ? { ...el, x: p.x, y: p.y } : el;
           }));
-          addMessage('assistant', '画布布局已优化整理。', AgentRole.SCHEDULER);
+          addMessage('assistant', '已优化画布布局。', AgentRole.SCHEDULER);
           break;
         case 'note':
           pushToHistory();
-          const content = args.join(' ') || '在此记录笔记...';
+          const content = args.join(' ') || '在此输入笔记内容...';
           const newNote: CanvasElement = {
             id: crypto.randomUUID(), type: DiagramType.NOTE, mermaidCode: '',
             x: -offset.x/scale + 200, y: -offset.y/scale + 200, scale: 1,
-            title: '随手记', level: 0, deconstructedElements: [], themeId: THEMES[0].id, content
+            title: '新随手记', level: 0, deconstructedElements: [], themeId: THEMES[0].id, content
           };
           setElements(prev => [...prev, newNote]);
-          addMessage('assistant', '已创建新的随手记卡片。', AgentRole.INTERACTION_FEEDBACK);
+          addMessage('assistant', '已在画布上为您部署了一个笔记模块。', AgentRole.INTERACTION_FEEDBACK);
           break;
         case 'vision':
           fileRef.current?.click();
           break;
         case 'review':
           setIsProcessing(true);
-          addThinkingStep(AgentRole.REVIEWER, "正在全面审计当前架构逻辑...");
+          addThinkingStep(AgentRole.REVIEWER, "正在深度审计当前架构并寻找潜在瓶颈...");
           const report = await analyzeWorkspace(elements, "请审计当前架构并给出优化建议。");
           addMessage('assistant', report, AgentRole.REVIEWER);
           setIsProcessing(false);
@@ -279,16 +285,19 @@ const App: React.FC = () => {
           const blob = new Blob([data], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
-          link.download = `Project-${Date.now()}.arch.json`;
+          link.download = `ArchProject-${new Date().toISOString().slice(0,10)}.json`;
           link.href = url;
           link.click();
           break;
         case 'clear':
-          pushToHistory();
-          setElements([]); setConnections([]); setThinkingSteps([]);
+          if (confirm("确定要清空当前画布吗？")) {
+            pushToHistory();
+            setElements([]); setConnections([]); setThinkingSteps([]);
+            addMessage('assistant', '画布已重置。', AgentRole.INTERACTION_FEEDBACK);
+          }
           break;
         default:
-          addMessage('assistant', '未知指令。', AgentRole.INTERACTION_FEEDBACK);
+          addMessage('assistant', '未识别指令，输入 / 查看可用列表。', AgentRole.INTERACTION_FEEDBACK);
       }
     } else {
       startCollaborativeWorkflow(trimmed);
@@ -309,25 +318,24 @@ const App: React.FC = () => {
     globalAbortControllerRef.current = controller;
 
     try {
-      addThinkingStep(AgentRole.CLASSIFIER, "正在解构需求层级并规划方案...");
+      addThinkingStep(AgentRole.CLASSIFIER, "正在解构需求并规划最佳可视化方案...");
       const hierarchyMatch = input.match(/层级为[：:](.+)/);
       const customHierarchy = hierarchyMatch ? hierarchyMatch[1] : undefined;
       
       const rawPlan = await classifyContentAgent(input, customHierarchy);
       if (controller.signal.aborted) return;
       
-      // Step 1: Show Intervention Plan Checklist
       const planNodes: PlanNode[] = rawPlan.nodes.map(n => ({
         ...n,
         id: crypto.randomUUID(),
         selected: true
       }));
 
-      addMessage('assistant', "我已经为您规划了架构解构方案，请确认或修改需要生成的模块：", AgentRole.CLASSIFIER, 'plan', planNodes);
+      addMessage('assistant', "根据您的需求，我规划了以下模块架构，您可以在执行前修改模块标题或选择性剔除：", AgentRole.CLASSIFIER, 'plan', planNodes);
       
     } catch (err) {
       if (!controller.signal.aborted) {
-        addMessage('assistant', "方案规划失败，请检查网络或重试。", AgentRole.INTERACTION_FEEDBACK);
+        addMessage('assistant', "方案规划失败，请重试。", AgentRole.INTERACTION_FEEDBACK);
       }
     } finally {
       setIsProcessing(false);
@@ -342,13 +350,13 @@ const App: React.FC = () => {
     globalAbortControllerRef.current = controller;
     
     const selectedNodes = plan.filter(p => p.selected);
-    addThinkingStep(AgentRole.GENERATOR, `开始并行生成 ${selectedNodes.length} 个模块图表...`);
+    addThinkingStep(AgentRole.GENERATOR, `开始并行绘制 ${selectedNodes.length} 个核心模块图表...`);
     
     const newElements: CanvasElement[] = [];
     try {
       for (const node of selectedNodes) {
         if (controller.signal.aborted) break;
-        addThinkingStep(AgentRole.GENERATOR, `正在绘制：${node.title}...`);
+        addThinkingStep(AgentRole.GENERATOR, `正在绘制：【${node.title}】...`);
         const code = await generateDiagramAgent(node, originalInput);
         newElements.push({
           id: node.id, type: node.suggestedType, mermaidCode: code,
@@ -359,12 +367,12 @@ const App: React.FC = () => {
 
       if (!controller.signal.aborted) {
         setElements(prev => [...prev, ...newElements]);
-        addMessage('assistant', `成功生成架构！已为您部署了 ${newElements.length} 个互联模块。您可以点击消息中的模块名快速跳转。`, AgentRole.SCHEDULER);
+        addMessage('assistant', `架构已在画布完成部署！共生成 ${newElements.length} 个模块。您可以使用快捷指令进行架构审计。`, AgentRole.SCHEDULER);
         onFitView();
       }
     } catch (err) {
       if (!controller.signal.aborted) {
-        addMessage('assistant', "图表生成中途中断，部分模块可能未就绪。", AgentRole.INTERACTION_FEEDBACK);
+        addMessage('assistant', "生成过程因异常中断，请检查模型连接。", AgentRole.INTERACTION_FEEDBACK);
       }
     } finally {
       setIsProcessing(false);
@@ -387,8 +395,8 @@ const App: React.FC = () => {
           mermaidCode: diag.mermaidCode, x: -offset.x/scale+200, y: -offset.y/scale+200,
           scale: 1, title: diag.title, level: 1, deconstructedElements: [], themeId: THEMES[0].id
         }]);
-        addMessage('assistant', `根据图片识别，已还原架构模块：【${diag.title}】`, AgentRole.GENERATOR);
-      } catch (e) { addMessage('assistant', '视觉解析失败，请确保图片清晰且包含架构特征。', AgentRole.INTERACTION_FEEDBACK); }
+        addMessage('assistant', `视觉引擎已将图片还原为架构模块：【${diag.title}】。`, AgentRole.GENERATOR);
+      } catch (e) { addMessage('assistant', '视觉解析失败，请尝试更清晰的架构草图。', AgentRole.INTERACTION_FEEDBACK); }
       finally { setIsProcessing(false); }
     };
     reader.readAsDataURL(file);
@@ -452,16 +460,16 @@ const App: React.FC = () => {
     return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
   }, [undo, redo]);
 
-  // Derived Quick Actions based on context
+  // 根据当前状态动态生成的快捷动作
   const quickActions = useMemo(() => {
     const actions = [];
     if (elements.length > 0) {
-      actions.push({ id: 'layout', label: '一键整理布局', icon: <Layout className="w-3.5 h-3.5" />, onClick: () => handleCommand('/layout') });
-      actions.push({ id: 'review', label: '审计当前架构', icon: <ShieldCheck className="w-3.5 h-3.5" />, onClick: () => handleCommand('/review') });
-      actions.push({ id: 'clear', label: '清空画布', icon: <Trash2 className="w-3.5 h-3.5 text-rose-400" />, onClick: () => handleCommand('/clear') });
+      actions.push({ id: 'layout', label: '一键自动整理', icon: <Layout className="w-3.5 h-3.5" />, onClick: () => handleCommand('/layout') });
+      actions.push({ id: 'review', label: '进行全域审计', icon: <ShieldCheck className="w-3.5 h-3.5" />, onClick: () => handleCommand('/review') });
+      actions.push({ id: 'note', label: '快速记笔记', icon: <StickyNote className="w-3.5 h-3.5 text-yellow-400" />, onClick: () => handleCommand('/note') });
     } else {
-      actions.push({ id: 'example', label: '示例：认证架构', icon: <Zap className="w-3.5 h-3.5 text-amber-400" />, onClick: () => handleCommand('帮我设计一个基于 OAuth2.0 的分布式认证架构') });
-      actions.push({ id: 'vision', label: '图片转架构', icon: <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />, onClick: () => handleCommand('/vision') });
+      actions.push({ id: 'example1', label: '电商微服务架构', icon: <Zap className="w-3.5 h-3.5 text-amber-400" />, onClick: () => handleCommand('设计一个包含订单、支付、库存系统的电商微服务架构图') });
+      actions.push({ id: 'vision', label: '视觉图片解析', icon: <ImageIcon className="w-3.5 h-3.5 text-pink-400" />, onClick: () => handleCommand('/vision') });
     }
     return actions;
   }, [elements.length]);
@@ -470,62 +478,73 @@ const App: React.FC = () => {
     <div className="flex h-screen w-screen bg-[#020617] text-slate-200 overflow-hidden font-sans select-none">
       <input type="file" ref={fileRef} className="hidden" accept="image/*" onChange={onFileChange} />
       
-      <aside className="w-[420px] h-full border-r border-slate-800 bg-slate-900/80 backdrop-blur-3xl z-20 flex flex-col shadow-2xl">
+      <aside className="w-[420px] h-full border-r border-slate-800 bg-slate-900/80 backdrop-blur-3xl z-20 flex flex-col shadow-2xl relative">
         <div className="p-7 border-b border-slate-800 flex items-center justify-between">
            <div className="flex items-center gap-4">
-             <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20"><Terminal className="w-5 h-5 text-indigo-400" /></div>
-             <h1 className="font-black tracking-tighter uppercase text-sm">ARCH PRO ENGINE</h1>
+             <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 shadow-inner"><Terminal className="w-5 h-5 text-indigo-400" /></div>
+             <h1 className="font-black tracking-tighter uppercase text-sm bg-gradient-to-r from-indigo-400 to-sky-400 bg-clip-text text-transparent">ARCH PRO ENGINE</h1>
            </div>
            <div className="flex gap-1">
-             <button onClick={undo} disabled={history.length===0} className="p-2 hover:bg-white/5 rounded-lg disabled:opacity-20 transition-all"><Undo2 className="w-4 h-4" /></button>
-             <button onClick={redo} disabled={future.length===0} className="p-2 hover:bg-white/5 rounded-lg disabled:opacity-20 transition-all"><Redo2 className="w-4 h-4" /></button>
+             <button onClick={undo} disabled={history.length===0} className="p-2 hover:bg-white/5 rounded-lg disabled:opacity-20 transition-all active:scale-90" title="撤销 (Ctrl+Z)"><Undo2 className="w-4 h-4" /></button>
+             <button onClick={redo} disabled={future.length===0} className="p-2 hover:bg-white/5 rounded-lg disabled:opacity-20 transition-all active:scale-90" title="重做 (Ctrl+Y)"><Redo2 className="w-4 h-4" /></button>
            </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-7 space-y-7 no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-7 space-y-7 no-scrollbar scroll-smooth">
           <AgentPanel agents={[
-            { role: AgentRole.SCHEDULER, status: isProcessing ? 'processing' : 'completed', message: isProcessing ? '正在拼命思考中...' : '在线' },
+            { role: AgentRole.SCHEDULER, status: isProcessing ? 'processing' : 'completed', message: isProcessing ? '执行计划中...' : '在线' },
             { role: AgentRole.CLASSIFIER, status: 'idle', message: '就绪' },
             { role: AgentRole.GENERATOR, status: 'idle', message: '就绪' }
           ]} thinkingSteps={thinkingSteps} />
 
           <div className="space-y-6">
             {messages.map((msg) => (
-              <div key={msg.id} className={`flex flex-col gap-2 ${msg.role === 'user' ? 'items-end' : 'items-start'} animate-in fade-in duration-300`}>
-                {msg.agent && <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2 px-2"><Zap className="w-2.5 h-2.5" />{msg.agent}</span>}
-                <div className={`max-w-[95%] px-5 py-4 rounded-3xl text-xs border ${msg.role === 'user' ? 'bg-indigo-600 border-indigo-400/30 shadow-[0_0_20px_rgba(79,70,229,0.3)]' : 'bg-slate-800/80 border-slate-700/50 backdrop-blur-sm shadow-xl'}`}>
+              <div key={msg.id} className={`flex flex-col gap-2 ${msg.role === 'user' ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 fade-in duration-300`}>
+                {msg.agent && <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2 px-2"><Zap className="w-2.5 h-2.5 text-indigo-400" />{msg.agent}</span>}
+                <div className={`max-w-[95%] px-5 py-4 rounded-3xl text-xs border leading-relaxed shadow-xl ${msg.role === 'user' ? 'bg-indigo-600 border-indigo-400/40 shadow-[0_10px_30px_rgba(79,70,229,0.3)]' : 'bg-slate-800/80 border-slate-700/50 backdrop-blur-sm'}`}>
                   {msg.type === 'plan' ? (
                     <div className="space-y-4 py-1">
                       <p className="font-bold text-slate-100">{msg.content}</p>
-                      <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                      <div className="space-y-2 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
                         {msg.plan?.map((node) => (
-                          <div key={node.id} className="flex items-center gap-3 p-3 bg-slate-900/50 rounded-2xl border border-white/5 group hover:border-indigo-500/30 transition-all">
-                            <button 
-                              onClick={() => {
-                                setMessages(prev => prev.map(m => m.id === msg.id ? {
-                                  ...m, plan: m.plan?.map(n => n.id === node.id ? { ...n, selected: !n.selected } : n)
-                                } : m));
-                              }}
-                              className={`p-1 rounded-md transition-colors ${node.selected ? 'text-indigo-400 bg-indigo-500/10' : 'text-slate-600 hover:text-slate-400'}`}
-                            >
-                              {node.selected ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
-                            </button>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold truncate text-slate-200">{node.title}</span>
-                                <span className="text-[9px] px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded uppercase font-black">{node.suggestedType}</span>
+                          <div key={node.id} className="flex flex-col gap-2 p-3 bg-slate-900/60 rounded-2xl border border-white/5 group hover:border-indigo-500/40 transition-all">
+                            <div className="flex items-center gap-3">
+                              <button 
+                                onClick={() => {
+                                  setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                    ...m, plan: m.plan?.map(n => n.id === node.id ? { ...n, selected: !n.selected } : n)
+                                  } : m));
+                                }}
+                                className={`p-1 rounded-md transition-colors ${node.selected ? 'text-indigo-400 bg-indigo-500/15' : 'text-slate-600 hover:text-slate-400'}`}
+                              >
+                                {node.selected ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+                              </button>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <input 
+                                    className="bg-transparent font-bold truncate text-slate-200 focus:outline-none focus:text-white border-b border-transparent focus:border-indigo-500/50"
+                                    value={node.title}
+                                    onChange={(e) => {
+                                      const newTitle = e.target.value;
+                                      setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                        ...m, plan: m.plan?.map(n => n.id === node.id ? { ...n, title: newTitle } : n)
+                                      } : m));
+                                    }}
+                                  />
+                                  <span className="text-[8px] px-1 py-0.5 bg-slate-800 text-indigo-400 rounded uppercase font-black border border-indigo-500/20">{node.suggestedType}</span>
+                                </div>
                               </div>
-                              <p className="text-[10px] text-slate-500 truncate mt-0.5">{node.description}</p>
                             </div>
+                            <p className="text-[10px] text-slate-500 pl-8 italic">{node.description}</p>
                           </div>
                         ))}
                       </div>
                       <button 
-                        onClick={() => executeGeneration(msg.plan!, "请根据确定的方案生成详细架构图。")}
-                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all mt-2"
+                        onClick={() => executeGeneration(msg.plan!, "请根据此确认的计划生成所有架构。")}
+                        className="w-full py-4 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 rounded-2xl font-black text-xs flex items-center justify-center gap-2 shadow-2xl active:scale-95 transition-all mt-2 group"
                       >
-                        <Zap className="w-4 h-4 fill-white" />
-                        立即执行生成
+                        <Zap className="w-4 h-4 fill-white group-hover:animate-pulse" />
+                        立即执行部署任务
                       </button>
                     </div>
                   ) : (
@@ -537,41 +556,41 @@ const App: React.FC = () => {
             {isProcessing && (
               <div className="flex items-center gap-2 px-4 py-2 text-indigo-400 animate-pulse">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                <span className="text-[10px] font-bold tracking-widest uppercase">AI 正在输入...</span>
+                <span className="text-[10px] font-black tracking-widest uppercase italic">AI 正在深度思考并构图...</span>
               </div>
             )}
           </div>
         </div>
 
         <div className="p-7 border-t border-slate-800 bg-slate-950/40 relative">
-          {/* Contextual Quick Actions */}
-          <div className="absolute bottom-full left-0 right-0 px-7 pb-4 flex gap-2 overflow-x-auto no-scrollbar mask-fade-edges">
+          {/* 动态快捷动作栏 */}
+          <div className="absolute bottom-full left-0 right-0 px-7 pb-4 flex gap-2 overflow-x-auto no-scrollbar mask-fade-edges z-50">
             {quickActions.map(action => (
               <button 
                 key={action.id} 
                 onClick={action.onClick}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800/80 backdrop-blur-xl border border-white/5 hover:border-indigo-500/50 hover:bg-slate-700/80 rounded-full text-[10px] font-bold whitespace-nowrap transition-all shadow-lg group"
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-800/60 backdrop-blur-2xl border border-white/5 hover:border-indigo-500/50 hover:bg-slate-700/80 rounded-2xl text-[10px] font-black whitespace-nowrap transition-all shadow-xl group active:scale-95"
               >
-                <span className="group-hover:scale-110 transition-transform">{action.icon}</span>
+                <span className="group-hover:rotate-12 transition-transform">{action.icon}</span>
                 {action.label}
               </button>
             ))}
           </div>
 
-          {showMenu && (
-            <div className="absolute bottom-full left-7 right-7 mb-4 bg-slate-800 border border-slate-700 rounded-3xl shadow-2xl overflow-hidden z-[110] animate-in slide-in-from-bottom-2 duration-200">
-              {filteredCommands.map((cmd, idx) => (
-                <button key={cmd.id} onClick={() => { setUserInput(cmd.label + ' '); setShowMenu(false); inputRef.current?.focus(); }} onMouseEnter={() => setMenuIndex(idx)} className={`w-full px-5 py-3.5 flex items-center gap-4 text-left ${idx === menuIndex ? 'bg-indigo-600' : 'hover:bg-slate-700/50'}`}>
-                  <div className={`p-2 rounded-xl bg-slate-900/50 ${idx === menuIndex ? 'text-white' : cmd.color}`}>{cmd.icon}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold truncate">{cmd.label}</p>
-                    <p className="text-[9px] text-slate-500 truncate">{cmd.desc}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
           <div className="relative">
+            {showMenu && (
+              <div className="absolute bottom-full left-0 right-0 mb-4 bg-slate-800 border border-slate-700 rounded-3xl shadow-2xl overflow-hidden z-[110] animate-in slide-in-from-bottom-2 duration-200">
+                {filteredCommands.map((cmd, idx) => (
+                  <button key={cmd.id} onClick={() => { setUserInput(cmd.label + ' '); setShowMenu(false); inputRef.current?.focus(); }} onMouseEnter={() => setMenuIndex(idx)} className={`w-full px-5 py-4 flex items-center gap-4 text-left transition-colors ${idx === menuIndex ? 'bg-indigo-600' : 'hover:bg-slate-700/50'}`}>
+                    <div className={`p-2 rounded-xl bg-slate-900/50 ${idx === menuIndex ? 'text-white' : cmd.color}`}>{cmd.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold truncate text-white">{cmd.label}</p>
+                      <p className="text-[10px] text-slate-400 truncate mt-0.5">{cmd.desc}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea 
               ref={inputRef} value={userInput} 
               onChange={(e) => setUserInput(e.target.value)} 
@@ -580,14 +599,15 @@ const App: React.FC = () => {
                   if (e.key === 'ArrowDown') { e.preventDefault(); setMenuIndex(i => (i + 1) % filteredCommands.length); }
                   else if (e.key === 'ArrowUp') { e.preventDefault(); setMenuIndex(i => (i - 1 + filteredCommands.length) % filteredCommands.length); }
                   else if (e.key === 'Enter') { e.preventDefault(); setUserInput(filteredCommands[menuIndex].label + ' '); setShowMenu(false); }
+                  else if (e.key === 'Escape') { setShowMenu(false); }
                 } else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCommand(userInput); setUserInput(''); }
               }} 
-              placeholder="输入需求或使用 / 指令..." 
-              className="w-full bg-slate-900 border border-slate-700/50 rounded-[28px] pl-6 pr-14 py-5 text-xs focus:border-indigo-500 outline-none resize-none min-h-[80px] no-scrollbar shadow-inner transition-all duration-300" 
+              placeholder="输入需求或使用 / 指令探索..." 
+              className="w-full bg-slate-900/80 border border-slate-700/50 rounded-[30px] pl-6 pr-14 py-5 text-xs focus:border-indigo-500 outline-none resize-none min-h-[90px] no-scrollbar shadow-inner transition-all duration-300 focus:shadow-[0_0_20px_rgba(79,70,229,0.1)]" 
             />
             <button 
               onClick={() => { handleCommand(userInput); if(!isProcessing) setUserInput(''); }} 
-              className={`absolute right-3.5 bottom-3.5 p-3 rounded-[20px] shadow-lg active:scale-95 transition-all duration-500 ${isProcessing ? 'bg-rose-600 hover:bg-rose-500 animate-pulse' : 'bg-indigo-600 hover:bg-indigo-500'}`}
+              className={`absolute right-3.5 bottom-3.5 p-3.5 rounded-[22px] shadow-2xl active:scale-90 transition-all duration-500 ${isProcessing ? 'bg-rose-600 hover:bg-rose-500 animate-pulse' : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20'}`}
               title={isProcessing ? "停止生成" : "发送指令"}
             >
               {isProcessing ? <Square className="w-4 h-4 text-white fill-white" /> : <Send className="w-4 h-4 text-white" />}
@@ -598,7 +618,7 @@ const App: React.FC = () => {
 
       <main 
         ref={mainRef}
-        className={`flex-1 relative overflow-hidden bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:60px_60px] ${isSpaceDown ? 'cursor-grabbing' : mode === 'pan' ? 'cursor-grab' : 'cursor-crosshair'}`}
+        className={`flex-1 relative overflow-hidden bg-[radial-gradient(#1e293b_1.5px,transparent_1.5px)] [background-size:60px_60px] ${isSpaceDown ? 'cursor-grabbing' : mode === 'pan' ? 'cursor-grab' : 'cursor-crosshair'}`}
         onMouseDown={(e) => { if(isSpaceDown || mode==='pan' || e.shiftKey) setDraggingId('pan'); }}
         onMouseMove={(e) => {
           if (draggingId === 'pan') setOffset(prev => ({ x: prev.x + e.movementX, y: prev.y + e.movementY }));
@@ -612,31 +632,31 @@ const App: React.FC = () => {
             <div 
               key={el.id} 
               id={`card-${el.id}`}
-              className={`absolute bg-slate-900 border-2 border-slate-800 rounded-[40px] w-[550px] shadow-2xl transition-all ${draggingId === el.id ? 'z-50 border-indigo-500 scale-[1.02]' : 'z-10'}`} 
+              className={`absolute bg-slate-900 border-2 rounded-[44px] w-[550px] shadow-[0_30px_60px_rgba(0,0,0,0.5)] transition-all duration-300 ${highlightedId === el.id ? 'ring-8 ring-indigo-500/20 border-indigo-500 shadow-indigo-500/30' : 'border-slate-800'} ${draggingId === el.id ? 'z-50 border-indigo-400 scale-[1.03] shadow-2xl' : 'z-10'}`} 
               style={{ left: el.x, top: el.y }}
             >
               <div 
-                className="px-8 py-6 border-b border-slate-800 flex items-center justify-between cursor-grab active:cursor-grabbing" 
+                className="px-8 py-6 border-b border-slate-800/60 flex items-center justify-between cursor-grab active:cursor-grabbing" 
                 onMouseDown={(e) => { e.stopPropagation(); setDraggingId(el.id); }}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg ${el.type === DiagramType.NOTE ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'} flex items-center justify-center font-black text-[10px] border`}>{el.level || 'N'}</div>
-                  <span className="text-[11px] font-black uppercase tracking-widest text-slate-100">{el.title}</span>
+                  <div className={`w-8 h-8 rounded-xl ${el.type === DiagramType.NOTE ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'} flex items-center justify-center font-black text-[10px] border shadow-inner`}>{el.level || 'L'}</div>
+                  <span className="text-[12px] font-black uppercase tracking-[0.1em] text-slate-100">{el.title}</span>
                 </div>
                 <div className="flex items-center gap-1">
                   {el.type !== DiagramType.NOTE && (
                     <>
                       <button 
                         onClick={(e) => { e.stopPropagation(); exportCardAsImage(el.id, el.title); }} 
-                        className="text-slate-500 hover:text-emerald-400 p-2 transition-colors rounded-lg hover:bg-white/5"
-                        title="导出为此卡片图片"
+                        className="text-slate-500 hover:text-emerald-400 p-2.5 transition-colors rounded-xl hover:bg-white/5 active:scale-90"
+                        title="下载为高清图"
                       >
                         <Download className="w-4 h-4" />
                       </button>
                       <button 
                         onClick={(e) => { e.stopPropagation(); setShowSourceMap(prev => ({ ...prev, [el.id]: !prev[el.id] })); }} 
-                        className={`p-2 transition-colors rounded-lg hover:bg-white/5 ${showSourceMap[el.id] ? 'text-indigo-400' : 'text-slate-500 hover:text-indigo-400'}`}
-                        title={showSourceMap[el.id] ? "查看图表" : "查看源码"}
+                        className={`p-2.5 transition-colors rounded-xl hover:bg-white/5 active:scale-90 ${showSourceMap[el.id] ? 'text-indigo-400' : 'text-slate-500 hover:text-indigo-400'}`}
+                        title={showSourceMap[el.id] ? "显示图表" : "显示代码"}
                       >
                         {showSourceMap[el.id] ? <Eye className="w-4 h-4" /> : <Code2 className="w-4 h-4" />}
                       </button>
@@ -644,42 +664,46 @@ const App: React.FC = () => {
                   )}
                   <button 
                     onClick={(e) => { e.stopPropagation(); pushToHistory(); setElements(prev => prev.filter(i => i.id !== el.id)); }} 
-                    className="text-slate-600 hover:text-rose-400 p-2 transition-colors rounded-lg hover:bg-white/5"
-                    title="删除模块"
+                    className="text-slate-600 hover:text-rose-400 p-2.5 transition-colors rounded-xl hover:bg-white/5 active:scale-90"
+                    title="移除此模块"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
-              <div className="p-9">
+              <div className="p-10">
                 {el.type === DiagramType.NOTE ? (
                   <textarea 
                     value={el.content || ''} 
                     onChange={(e) => setElements(prev => prev.map(i => i.id === el.id ? { ...i, content: e.target.value } : i))}
-                    className="w-full h-32 bg-transparent text-yellow-100/70 font-mono text-xs leading-relaxed outline-none resize-none border-none p-0"
+                    className="w-full h-40 bg-transparent text-yellow-100/70 font-mono text-xs leading-relaxed outline-none resize-none border-none p-0 custom-scrollbar"
+                    placeholder="在这里记录你的技术笔记..."
                   />
                 ) : (
                   <>
-                    <div className="relative overflow-hidden rounded-2xl">
+                    <div className="relative overflow-hidden rounded-3xl bg-black/20 p-2 border border-white/5">
                       {showSourceMap[el.id] ? (
-                        <div className="bg-black/50 p-6 rounded-2xl font-mono text-[10px] text-indigo-200 border border-white/5 min-h-[150px] overflow-auto whitespace-pre animate-in fade-in duration-300">
+                        <div className="bg-black/50 p-6 rounded-2xl font-mono text-[10px] text-indigo-300/80 border border-white/5 min-h-[200px] max-h-[400px] overflow-auto whitespace-pre custom-scrollbar animate-in fade-in zoom-in-95 duration-300">
                           {el.mermaidCode}
                         </div>
                       ) : (
                         <SmartDiagram id={el.id} code={el.mermaidCode} isVisible={true} themeVars={THEMES[0].mermaidVars} />
                       )}
                     </div>
-                    <div className="mt-8 flex gap-3">
-                      <input 
-                        value={el.localChatInput || ''} 
-                        onChange={(e) => setElements(prev => prev.map(i => i.id === el.id ? { ...i, localChatInput: e.target.value } : i))} 
-                        onKeyDown={(e) => e.key === 'Enter' && updateCardCode(el)} 
-                        placeholder="微调此模块的逻辑..." 
-                        className="flex-1 bg-slate-950/50 border border-slate-800 rounded-2xl px-5 py-3 text-[10px] outline-none focus:border-indigo-500/50 transition-all" 
-                      />
+                    <div className="mt-10 flex gap-4">
+                      <div className="relative flex-1">
+                        <input 
+                          value={el.localChatInput || ''} 
+                          onChange={(e) => setElements(prev => prev.map(i => i.id === el.id ? { ...i, localChatInput: e.target.value } : i))} 
+                          onKeyDown={(e) => e.key === 'Enter' && updateCardCode(el)} 
+                          placeholder="微调此模块细节（如：增加超时处理）..." 
+                          className="w-full bg-slate-950/50 border border-slate-800 rounded-2xl px-5 py-3.5 text-[11px] outline-none focus:border-indigo-500/50 transition-all pr-12 focus:shadow-inner" 
+                        />
+                        <Edit3 className="absolute right-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-700 pointer-events-none" />
+                      </div>
                       <button 
                         onClick={() => updateCardCode(el)} 
-                        className={`p-3 rounded-2xl transition-all duration-300 ${el.isLocalUpdating ? 'bg-rose-500/10 text-rose-400' : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-600 hover:text-white'}`}
+                        className={`p-3.5 rounded-2xl transition-all duration-300 shadow-xl active:scale-90 ${el.isLocalUpdating ? 'bg-rose-500/10 text-rose-400' : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-600 hover:text-white'}`}
                       >
                         {el.isLocalUpdating ? <Square className="w-4 h-4 fill-current animate-pulse" /> : <Send className="w-4 h-4" />}
                       </button>
