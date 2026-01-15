@@ -4,11 +4,11 @@ import {
   Send, Undo2, Redo2, Terminal, Zap, Trash2, RefreshCw, Square,
   Wand2, Link as LinkIcon, StickyNote, ImageIcon, ShieldCheck, 
   Save, FolderOpen, Eraser, Command, MousePointer2, Hand, Focus, Home,
-  Loader2, Download, Code2, Eye
+  Loader2, Download, Code2, Eye, CheckCircle2, XCircle, Layout, ChevronRight
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { 
-  AgentRole, CanvasElement, DiagramType, THEMES, Connection, ChatMessage, ThinkingStep 
+  AgentRole, CanvasElement, DiagramType, THEMES, Connection, ChatMessage, ThinkingStep, PlanNode
 } from './types';
 import { 
   classifyContentAgent, generateDiagramAgent, modifyDiagramContent, 
@@ -30,8 +30,46 @@ const COMMAND_REGISTRY = [
   { id: 'clear', label: '/clear', desc: '清空画布数据', icon: <Eraser className="w-4 h-4" />, color: 'text-rose-400' },
 ];
 
-const MarkdownText: React.FC<{ text: string }> = ({ text }) => {
+const MarkdownText: React.FC<{ text: string, elements: CanvasElement[], onTeleport: (id: string) => void }> = ({ text, elements, onTeleport }) => {
+  // Enhanced pattern to match card titles for teleportation
   const parts = text.split(/(```[\s\S]*?```|\n)/g);
+  
+  const renderContent = (content: string) => {
+    // Check if content contains any existing card titles
+    let result: React.ReactNode[] = [content];
+    
+    elements.forEach(el => {
+      const newResult: React.ReactNode[] = [];
+      result.forEach(part => {
+        if (typeof part === 'string') {
+          const splitRegex = new RegExp(`(【${el.title}】|"${el.title}"|${el.title})`, 'g');
+          const segments = part.split(splitRegex);
+          segments.forEach(seg => {
+            if (seg === `【${el.title}】` || seg === `"${el.title}"` || seg === el.title) {
+              newResult.push(
+                <button 
+                  key={crypto.randomUUID()}
+                  onClick={() => onTeleport(el.id)}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 rounded-md hover:bg-indigo-500/20 transition-all font-bold mx-0.5 group"
+                >
+                  <Focus className="w-2.5 h-2.5 group-hover:scale-110" />
+                  {seg}
+                </button>
+              );
+            } else {
+              newResult.push(seg);
+            }
+          });
+        } else {
+          newResult.push(part);
+        }
+      });
+      result = newResult;
+    });
+    
+    return result;
+  };
+
   return (
     <div className="space-y-2 break-words">
       {parts.map((part, i) => {
@@ -40,7 +78,7 @@ const MarkdownText: React.FC<{ text: string }> = ({ text }) => {
           return <pre key={i} className="bg-black/40 p-3 rounded-xl overflow-x-auto font-mono text-[10px] border border-white/5 text-indigo-200">{code}</pre>;
         }
         if (part === '\n') return <div key={i} className="h-1" />;
-        return <span key={i} className="text-slate-300">{part}</span>;
+        return <span key={i} className="text-slate-300">{renderContent(part)}</span>;
       })}
     </div>
   );
@@ -59,14 +97,11 @@ const App: React.FC = () => {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   
-  // Local state for toggling code view on cards
   const [showSourceMap, setShowSourceMap] = useState<Record<string, boolean>>({});
 
-  // Abort Controllers
   const globalAbortControllerRef = useRef<AbortController | null>(null);
   const cardAbortControllersRef = useRef<Record<string, AbortController>>({});
 
-  // History for Undo/Redo
   const [history, setHistory] = useState<{elements: CanvasElement[], connections: Connection[]}[]>([]);
   const [future, setFuture] = useState<{elements: CanvasElement[], connections: Connection[]}[]>([]);
 
@@ -97,7 +132,6 @@ const App: React.FC = () => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mainRef = useRef<HTMLElement>(null);
 
-  // Command Menu State
   const [showMenu, setShowMenu] = useState(false);
   const [menuIndex, setMenuIndex] = useState(0);
   const filteredCommands = useMemo(() => {
@@ -115,9 +149,27 @@ const App: React.FC = () => {
     setThinkingSteps(prev => [...prev, { id: crypto.randomUUID(), agent, content, timestamp: Date.now() }]);
   };
 
-  const addMessage = (role: 'user' | 'assistant', content: string, agent?: AgentRole) => {
-    setMessages(prev => [...prev, { id: crypto.randomUUID(), role, content, agent, timestamp: Date.now() }]);
+  const addMessage = (role: 'user' | 'assistant', content: string, agent?: AgentRole, type: 'text' | 'plan' = 'text', plan?: PlanNode[]) => {
+    const id = crypto.randomUUID();
+    setMessages(prev => [...prev, { id, role, content, agent, timestamp: Date.now(), type, plan }]);
+    return id;
   };
+
+  const onTeleport = useCallback((id: string) => {
+    const el = elements.find(e => e.id === id);
+    if (!el || !mainRef.current) return;
+    
+    const viewportWidth = window.innerWidth - 420;
+    const viewportHeight = window.innerHeight;
+    
+    const targetScale = 0.8;
+    const targetX = (viewportWidth / 2) - (el.x + 275) * targetScale;
+    const targetY = (viewportHeight / 2) - (el.y + 300) * targetScale;
+    
+    // Smooth transition
+    setScale(targetScale);
+    setOffset({ x: targetX, y: targetY });
+  }, [elements]);
 
   const onFitView = useCallback(() => {
     if (elements.length === 0) return;
@@ -168,7 +220,6 @@ const App: React.FC = () => {
     if (!cardElement) return;
 
     try {
-      // Fix: Removing 'borderRadius' from html2canvas options as it is not a valid property
       const canvas = await html2canvas(cardElement, {
         backgroundColor: '#0f172a',
         scale: 2,
@@ -200,7 +251,7 @@ const App: React.FC = () => {
             const p = pos.find(p => p.id === el.id);
             return p ? { ...el, x: p.x, y: p.y } : el;
           }));
-          addMessage('assistant', '布局已整理。', AgentRole.SCHEDULER);
+          addMessage('assistant', '画布布局已优化整理。', AgentRole.SCHEDULER);
           break;
         case 'note':
           pushToHistory();
@@ -211,13 +262,14 @@ const App: React.FC = () => {
             title: '随手记', level: 0, deconstructedElements: [], themeId: THEMES[0].id, content
           };
           setElements(prev => [...prev, newNote]);
-          addMessage('assistant', '已创建笔记。', AgentRole.INTERACTION_FEEDBACK);
+          addMessage('assistant', '已创建新的随手记卡片。', AgentRole.INTERACTION_FEEDBACK);
           break;
         case 'vision':
           fileRef.current?.click();
           break;
         case 'review':
           setIsProcessing(true);
+          addThinkingStep(AgentRole.REVIEWER, "正在全面审计当前架构逻辑...");
           const report = await analyzeWorkspace(elements, "请审计当前架构并给出优化建议。");
           addMessage('assistant', report, AgentRole.REVIEWER);
           setIsProcessing(false);
@@ -252,28 +304,54 @@ const App: React.FC = () => {
     setIsProcessing(true);
     setThinkingSteps([]);
     addMessage('user', input);
-    pushToHistory();
     
     const controller = new AbortController();
     globalAbortControllerRef.current = controller;
 
     try {
-      addThinkingStep(AgentRole.CLASSIFIER, "正在解构需求层级...");
+      addThinkingStep(AgentRole.CLASSIFIER, "正在解构需求层级并规划方案...");
       const hierarchyMatch = input.match(/层级为[：:](.+)/);
       const customHierarchy = hierarchyMatch ? hierarchyMatch[1] : undefined;
       
-      const plan = await classifyContentAgent(input, customHierarchy);
+      const rawPlan = await classifyContentAgent(input, customHierarchy);
       if (controller.signal.aborted) return;
       
-      addThinkingStep(AgentRole.TITLER, `已规划 ${plan.nodes.length} 个核心模块。`);
-      const newElements: CanvasElement[] = [];
+      // Step 1: Show Intervention Plan Checklist
+      const planNodes: PlanNode[] = rawPlan.nodes.map(n => ({
+        ...n,
+        id: crypto.randomUUID(),
+        selected: true
+      }));
+
+      addMessage('assistant', "我已经为您规划了架构解构方案，请确认或修改需要生成的模块：", AgentRole.CLASSIFIER, 'plan', planNodes);
       
-      for (const node of plan.nodes) {
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        addMessage('assistant', "方案规划失败，请检查网络或重试。", AgentRole.INTERACTION_FEEDBACK);
+      }
+    } finally {
+      setIsProcessing(false);
+      globalAbortControllerRef.current = null;
+    }
+  };
+
+  const executeGeneration = async (plan: PlanNode[], originalInput: string) => {
+    setIsProcessing(true);
+    pushToHistory();
+    const controller = new AbortController();
+    globalAbortControllerRef.current = controller;
+    
+    const selectedNodes = plan.filter(p => p.selected);
+    addThinkingStep(AgentRole.GENERATOR, `开始并行生成 ${selectedNodes.length} 个模块图表...`);
+    
+    const newElements: CanvasElement[] = [];
+    try {
+      for (const node of selectedNodes) {
         if (controller.signal.aborted) break;
-        addThinkingStep(AgentRole.GENERATOR, `正在绘制 [${node.title}]...`);
-        const code = await generateDiagramAgent(node, input);
+        addThinkingStep(AgentRole.GENERATOR, `正在绘制：${node.title}...`);
+        const code = await generateDiagramAgent(node, originalInput);
         newElements.push({
-          id: crypto.randomUUID(), type: node.suggestedType, mermaidCode: code,
+          id: node.id, type: node.suggestedType, mermaidCode: code,
           x: 100 + (node.level - 1) * 600, y: 100 + newElements.length * 350,
           scale: 1, title: node.title, level: node.level, deconstructedElements: [], themeId: THEMES[0].id
         });
@@ -281,11 +359,12 @@ const App: React.FC = () => {
 
       if (!controller.signal.aborted) {
         setElements(prev => [...prev, ...newElements]);
-        addMessage('assistant', `架构已生成：包含 ${plan.nodes.length} 个子图表。`, AgentRole.SCHEDULER);
+        addMessage('assistant', `成功生成架构！已为您部署了 ${newElements.length} 个互联模块。您可以点击消息中的模块名快速跳转。`, AgentRole.SCHEDULER);
+        onFitView();
       }
     } catch (err) {
       if (!controller.signal.aborted) {
-        addMessage('assistant', "协作生成失败，请重试。", AgentRole.INTERACTION_FEEDBACK);
+        addMessage('assistant', "图表生成中途中断，部分模块可能未就绪。", AgentRole.INTERACTION_FEEDBACK);
       }
     } finally {
       setIsProcessing(false);
@@ -308,8 +387,8 @@ const App: React.FC = () => {
           mermaidCode: diag.mermaidCode, x: -offset.x/scale+200, y: -offset.y/scale+200,
           scale: 1, title: diag.title, level: 1, deconstructedElements: [], themeId: THEMES[0].id
         }]);
-        addMessage('assistant', '视觉架构已还原。', AgentRole.GENERATOR);
-      } catch (e) { addMessage('assistant', '视觉解析失败。', AgentRole.INTERACTION_FEEDBACK); }
+        addMessage('assistant', `根据图片识别，已还原架构模块：【${diag.title}】`, AgentRole.GENERATOR);
+      } catch (e) { addMessage('assistant', '视觉解析失败，请确保图片清晰且包含架构特征。', AgentRole.INTERACTION_FEEDBACK); }
       finally { setIsProcessing(false); }
     };
     reader.readAsDataURL(file);
@@ -373,6 +452,20 @@ const App: React.FC = () => {
     return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
   }, [undo, redo]);
 
+  // Derived Quick Actions based on context
+  const quickActions = useMemo(() => {
+    const actions = [];
+    if (elements.length > 0) {
+      actions.push({ id: 'layout', label: '一键整理布局', icon: <Layout className="w-3.5 h-3.5" />, onClick: () => handleCommand('/layout') });
+      actions.push({ id: 'review', label: '审计当前架构', icon: <ShieldCheck className="w-3.5 h-3.5" />, onClick: () => handleCommand('/review') });
+      actions.push({ id: 'clear', label: '清空画布', icon: <Trash2 className="w-3.5 h-3.5 text-rose-400" />, onClick: () => handleCommand('/clear') });
+    } else {
+      actions.push({ id: 'example', label: '示例：认证架构', icon: <Zap className="w-3.5 h-3.5 text-amber-400" />, onClick: () => handleCommand('帮我设计一个基于 OAuth2.0 的分布式认证架构') });
+      actions.push({ id: 'vision', label: '图片转架构', icon: <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />, onClick: () => handleCommand('/vision') });
+    }
+    return actions;
+  }, [elements.length]);
+
   return (
     <div className="flex h-screen w-screen bg-[#020617] text-slate-200 overflow-hidden font-sans select-none">
       <input type="file" ref={fileRef} className="hidden" accept="image/*" onChange={onFileChange} />
@@ -384,8 +477,8 @@ const App: React.FC = () => {
              <h1 className="font-black tracking-tighter uppercase text-sm">ARCH PRO ENGINE</h1>
            </div>
            <div className="flex gap-1">
-             <button onClick={undo} disabled={history.length===0} className="p-2 hover:bg-white/5 rounded-lg disabled:opacity-20"><Undo2 className="w-4 h-4" /></button>
-             <button onClick={redo} disabled={future.length===0} className="p-2 hover:bg-white/5 rounded-lg disabled:opacity-20"><Redo2 className="w-4 h-4" /></button>
+             <button onClick={undo} disabled={history.length===0} className="p-2 hover:bg-white/5 rounded-lg disabled:opacity-20 transition-all"><Undo2 className="w-4 h-4" /></button>
+             <button onClick={redo} disabled={future.length===0} className="p-2 hover:bg-white/5 rounded-lg disabled:opacity-20 transition-all"><Redo2 className="w-4 h-4" /></button>
            </div>
         </div>
 
@@ -396,12 +489,48 @@ const App: React.FC = () => {
             { role: AgentRole.GENERATOR, status: 'idle', message: '就绪' }
           ]} thinkingSteps={thinkingSteps} />
 
-          <div className="space-y-4">
+          <div className="space-y-6">
             {messages.map((msg) => (
               <div key={msg.id} className={`flex flex-col gap-2 ${msg.role === 'user' ? 'items-end' : 'items-start'} animate-in fade-in duration-300`}>
-                {msg.agent && <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2"><Zap className="w-2.5 h-2.5" />{msg.agent}</span>}
-                <div className={`max-w-[95%] px-5 py-4 rounded-3xl text-xs border ${msg.role === 'user' ? 'bg-indigo-600 border-indigo-400/30 shadow-[0_0_20px_rgba(79,70,229,0.3)]' : 'bg-slate-800/80 border-slate-700/50 backdrop-blur-sm'}`}>
-                  <MarkdownText text={msg.content} />
+                {msg.agent && <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2 px-2"><Zap className="w-2.5 h-2.5" />{msg.agent}</span>}
+                <div className={`max-w-[95%] px-5 py-4 rounded-3xl text-xs border ${msg.role === 'user' ? 'bg-indigo-600 border-indigo-400/30 shadow-[0_0_20px_rgba(79,70,229,0.3)]' : 'bg-slate-800/80 border-slate-700/50 backdrop-blur-sm shadow-xl'}`}>
+                  {msg.type === 'plan' ? (
+                    <div className="space-y-4 py-1">
+                      <p className="font-bold text-slate-100">{msg.content}</p>
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                        {msg.plan?.map((node) => (
+                          <div key={node.id} className="flex items-center gap-3 p-3 bg-slate-900/50 rounded-2xl border border-white/5 group hover:border-indigo-500/30 transition-all">
+                            <button 
+                              onClick={() => {
+                                setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                  ...m, plan: m.plan?.map(n => n.id === node.id ? { ...n, selected: !n.selected } : n)
+                                } : m));
+                              }}
+                              className={`p-1 rounded-md transition-colors ${node.selected ? 'text-indigo-400 bg-indigo-500/10' : 'text-slate-600 hover:text-slate-400'}`}
+                            >
+                              {node.selected ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold truncate text-slate-200">{node.title}</span>
+                                <span className="text-[9px] px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded uppercase font-black">{node.suggestedType}</span>
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate mt-0.5">{node.description}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <button 
+                        onClick={() => executeGeneration(msg.plan!, "请根据确定的方案生成详细架构图。")}
+                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all mt-2"
+                      >
+                        <Zap className="w-4 h-4 fill-white" />
+                        立即执行生成
+                      </button>
+                    </div>
+                  ) : (
+                    <MarkdownText text={msg.content} elements={elements} onTeleport={onTeleport} />
+                  )}
                 </div>
               </div>
             ))}
@@ -415,6 +544,20 @@ const App: React.FC = () => {
         </div>
 
         <div className="p-7 border-t border-slate-800 bg-slate-950/40 relative">
+          {/* Contextual Quick Actions */}
+          <div className="absolute bottom-full left-0 right-0 px-7 pb-4 flex gap-2 overflow-x-auto no-scrollbar mask-fade-edges">
+            {quickActions.map(action => (
+              <button 
+                key={action.id} 
+                onClick={action.onClick}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800/80 backdrop-blur-xl border border-white/5 hover:border-indigo-500/50 hover:bg-slate-700/80 rounded-full text-[10px] font-bold whitespace-nowrap transition-all shadow-lg group"
+              >
+                <span className="group-hover:scale-110 transition-transform">{action.icon}</span>
+                {action.label}
+              </button>
+            ))}
+          </div>
+
           {showMenu && (
             <div className="absolute bottom-full left-7 right-7 mb-4 bg-slate-800 border border-slate-700 rounded-3xl shadow-2xl overflow-hidden z-[110] animate-in slide-in-from-bottom-2 duration-200">
               {filteredCommands.map((cmd, idx) => (

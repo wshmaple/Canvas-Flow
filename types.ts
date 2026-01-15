@@ -8,7 +8,6 @@ export enum AgentRole {
   INTERACTION_FEEDBACK = '交互反馈智能体'
 }
 
-// Added AgentStatus to fix missing export error in AgentPanel.tsx
 export interface AgentStatus {
   role: AgentRole;
   status: 'idle' | 'processing' | 'completed' | 'error';
@@ -23,12 +22,19 @@ export enum DiagramType {
   NOTE = 'note'
 }
 
+export interface PlanNode extends CategoryNode {
+  selected: boolean;
+  id: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   agent?: AgentRole;
   content: string;
   timestamp: number;
+  type?: 'text' | 'plan';
+  plan?: PlanNode[];
 }
 
 export interface ThinkingStep {
