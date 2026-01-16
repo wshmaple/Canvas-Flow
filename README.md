@@ -2,7 +2,7 @@
 
 **Multi-Agent Diagram Architect** 是一款基于 Google Gemini 3 Pro 引擎驱动的次世代生产力工具。它将「无限画布」与「生成式 AI」深度结合，通过多智能体协同工作流，将晦涩复杂的长篇文本、需求文档或业务流程自动解构为直观、可交互且具美感的图表生态系统。
 
-![系统全景预览](https://github.com/wshmaple/Canvas-Flow/tree/main/images/UI1.png)
+![系统全景预览](images/UI1.png)
 
 ---
 
